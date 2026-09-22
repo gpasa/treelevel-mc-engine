@@ -56,6 +56,29 @@ make -C Backends/pythia          # ./treelevel-pythia
 make -C Backends/pythia install  # dans Modules/pythia8/
 ```
 
+## Publier une version
+
+Tout se passe sur la machine du développeur : la clé Developer ID ne quitte pas le trousseau, rien n'est confié
+à un service d'intégration continue.
+
+```bash
+scripts/release.sh                 # construit, signe, notarise, agrafe, fabrique le .dmg
+scripts/release.sh 0.2.0           # idem en fixant le numéro de version (project.yml et sources)
+scripts/release.sh --no-notarize   # s'arrête après la signature, pour vérifier hors ligne
+scripts/release.sh --upload        # crée en plus la release GitLab (GITLAB_PROJECT et GITLAB_TOKEN)
+```
+
+Préalables, une seule fois :
+
+- un certificat **Developer ID Application** dans le trousseau (Xcode › Réglages › Comptes › Gérer les
+  certificats) — il est inclus dans l'adhésion au programme développeur, il n'y a rien de plus à payer ;
+- les identifiants de notarisation :
+  `xcrun notarytool store-credentials "TreeLevelMC" --apple-id <identifiant> --team-id 9LVGAJ594U --password <mot de passe pour app>`.
+
+Le script produit dans `build/release/` : l'application signée et agrafée, le `.dmg` (avec un lien vers
+`/Applications`, le README et la licence), le `.zip`, `SHA256SUMS.txt` et un brouillon de notes de version.
+La vérification finale, `spctl -a -t open --context context:primary-signature -v`, doit répondre `accepted`.
+
 ## Licence
 
 GNU General Public License v3 ou ultérieure — voir `LICENSE`. Le fichier `Protocol/MCEngineProtocol.swift`,
