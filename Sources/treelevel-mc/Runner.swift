@@ -48,9 +48,12 @@ struct Runner {
         guard let driver = Installation.pythiaDriver else {
             return finish(failed: "the Pythia 8 module is not installed", start: start)
         }
+        // The generators run with the job folder as their working directory and are given relative names:
+        // Pythia reads `Beams:LHEF` as a single word, so a path with spaces (and the job folder lives under
+        // "Application Support") would be cut short.
         var settings = """
         Beams:frameType = 4
-        Beams:LHEF = \(folder.inputURL(job).path)
+        Beams:LHEF = \(job.input)
         Main:numberOfEvents = \(job.events)
         Random:setSeed = on
         Random:seed = \(job.seed % 900_000_000)
@@ -66,7 +69,7 @@ struct Runner {
         if let extra = job.extraSettings, !extra.isEmpty { settings += "\n" + extra }
         let config = folder.url.appendingPathComponent("pythia.cmnd")
         try settings.write(to: config, atomically: true, encoding: .utf8)
-        return try runProcess(driver, ["--config", config.path, "--out", folder.outputURL(job).path], start: start,
+        return try runProcess(driver, ["--config", config.lastPathComponent, "--out", job.output], start: start,
                               name: "Pythia 8 " + (Installation.capabilities(engineVersion: engineVersion).versions["pythia8"] ?? ""))
     }
 
@@ -81,7 +84,7 @@ struct Runner {
         cd /Herwig/EventHandlers
         library LesHouches.so
         create ThePEG::LesHouchesFileReader LesHouchesReader
-        set LesHouchesReader:FileName \(folder.inputURL(job).path)
+        set LesHouchesReader:FileName \(job.input)
         set LesHouchesReader:CacheFileName cache.tmp
         set LesHouchesReader:MaxScan 5
         create ThePEG::Cuts NoCuts
@@ -103,7 +106,7 @@ struct Runner {
         set /Herwig/Analysis/HepMCFile:PrintEvent \(job.events)
         set /Herwig/Analysis/HepMCFile:Format GenEvent
         set /Herwig/Analysis/HepMCFile:Units GeV_mm
-        set /Herwig/Analysis/HepMCFile:Filename \(folder.outputURL(job).path)
+        set /Herwig/Analysis/HepMCFile:Filename \(job.output)
         \(job.extraSettings ?? "")
         saverun \(name) EventGenerator
         """

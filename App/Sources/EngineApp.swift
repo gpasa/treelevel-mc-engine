@@ -19,14 +19,19 @@ struct EngineApp: App {
 final class EngineDelegate: NSObject, NSApplicationDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) {
         EngineState.shared.refreshCapabilities()
-        // `run <folder>` from TreeLevel, or a job folder dropped on the application.
+        // `run <folder>` on the command line, or a job folder dropped on the application.
         let args = Array(CommandLine.arguments.dropFirst())
         if args.count >= 2, args[0] == "run" { EngineState.shared.run(folder: URL(fileURLWithPath: args[1], isDirectory: true)) }
+        EngineState.shared.takePendingJobs()
+        // Opening the engine again is another way of saying "look for work".
+        NotificationCenter.default.addObserver(forName: NSApplication.didBecomeActiveNotification, object: nil, queue: .main) { _ in
+            EngineState.shared.takePendingJobs()
+        }
     }
 
     func application(_ application: NSApplication, open urls: [URL]) {
         for url in urls {
-            // treelevel-mc://run?job=<path> or a folder
+            // treelevel-mc://run?job=<path> — this reaches the engine whether it was running or not — or a folder.
             if url.isFileURL { EngineState.shared.run(folder: url) }
             else if let job = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems?.first(where: { $0.name == "job" })?.value {
                 EngineState.shared.run(folder: URL(fileURLWithPath: job, isDirectory: true))
@@ -45,14 +50,23 @@ final class EngineState: ObservableObject {
 
     @Published var entries: [Entry] = []
     @Published var capabilities: MCCapabilities?
-    let version = "0.1.0"
+    let version = "0.1.1"
 
     func refreshCapabilities() { capabilities = Installation.publishCapabilities(engineVersion: version) }
+
+    /// Runs the jobs TreeLevel has left queued in its container, ignoring the ones already taken.
+    func takePendingJobs() {
+        for folder in Installation.pendingJobs() where !taken.contains(folder.url.path) {
+            run(folder: folder.url)
+        }
+    }
+    private var taken = Set<String>()
 
     /// Runs a job on a background queue and keeps the window in step with its status file.
     func run(folder url: URL) {
         let folder = MCJobFolder(url)
-        guard let job = try? folder.readJob() else { return }
+        guard let job = try? folder.readJob(), !taken.contains(url.path) else { return }
+        taken.insert(url.path)
         let entry = Entry(process: job.process, generator: job.generator.label, status: MCStatus(state: .queued, jobID: job.id))
         entries.insert(entry, at: 0)
         let id = entry.id
@@ -69,6 +83,7 @@ final class EngineState: ObservableObject {
             watcher.cancel()
             await MainActor.run {
                 if let s = folder.readStatus(), let k = self.entries.firstIndex(where: { $0.id == id }) { self.entries[k].status = s }
+                self.refreshCapabilities()
             }
         }
     }

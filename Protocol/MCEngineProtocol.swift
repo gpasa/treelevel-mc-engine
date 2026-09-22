@@ -24,6 +24,29 @@ public enum MCEngineProtocol {
     public static let urlScheme = "treelevel-mc"
     /// Where the engine publishes what it can do, inside its own support folder.
     public static let capabilitiesFileName = "capabilities.json"
+
+    /// TreeLevel is sandboxed: everything the two programs share lives in its container, which the engine —
+    /// which is not sandboxed — can read and write. Seen from the engine, that is:
+    ///   ~/Library/Containers/org.pasahome.Feyn/Data/Library/Application Support/{MCJobs,TreeLevel MC Engine}
+    /// Seen from TreeLevel, it is simply its own Application Support folder.
+    public static let treeLevelBundleIdentifier = "org.pasahome.Feyn"
+    public static let jobsFolderName = "MCJobs"
+    public static let supportFolderName = "TreeLevel MC Engine"
+
+    /// Only meaningful in a process that is not sandboxed (the engine).
+    public static var treeLevelSupportDirectory: URL {
+        URL(fileURLWithPath: NSHomeDirectory())
+            .appendingPathComponent("Library/Containers/\(treeLevelBundleIdentifier)/Data/Library/Application Support", isDirectory: true)
+    }
+
+    /// The URL that asks a running engine to take a job: it reaches it whether it is already open or not.
+    public static func runURL(job folder: URL) -> URL? {
+        var components = URLComponents()
+        components.scheme = urlScheme
+        components.host = "run"
+        components.queryItems = [URLQueryItem(name: "job", value: folder.path)]
+        return components.url
+    }
 }
 
 /// What to run on the parton-level events.

@@ -56,14 +56,35 @@ enum Installation {
         return caps
     }
 
-    /// Writes the capabilities where TreeLevel looks for them.
+    /// Writes the capabilities where TreeLevel looks for them. TreeLevel is sandboxed and can only read its
+    /// own container, so the file goes there as well as in the engine's own folder.
     @discardableResult
     static func publishCapabilities(engineVersion: String) -> MCCapabilities {
         let caps = capabilities(engineVersion: engineVersion)
-        if let data = try? MCJobFolder.encoder.encode(caps) {
-            try? data.write(to: supportDirectory.appendingPathComponent(MCEngineProtocol.capabilitiesFileName))
+        guard let data = try? MCJobFolder.encoder.encode(caps) else { return caps }
+        try? data.write(to: supportDirectory.appendingPathComponent(MCEngineProtocol.capabilitiesFileName))
+        let inTreeLevel = MCEngineProtocol.treeLevelSupportDirectory.appendingPathComponent(MCEngineProtocol.supportFolderName, isDirectory: true)
+        if FileManager.default.fileExists(atPath: MCEngineProtocol.treeLevelSupportDirectory.path) {
+            try? FileManager.default.createDirectory(at: inTreeLevel, withIntermediateDirectories: true)
+            try? data.write(to: inTreeLevel.appendingPathComponent(MCEngineProtocol.capabilitiesFileName))
         }
         return caps
+    }
+
+    /// Jobs TreeLevel has left in its container and that nobody has started: the engine picks them up when it
+    /// is opened, so a job is never lost if the URL does not reach it.
+    static func pendingJobs(newerThan age: TimeInterval = 3600) -> [MCJobFolder] {
+        let jobs = MCEngineProtocol.treeLevelSupportDirectory.appendingPathComponent(MCEngineProtocol.jobsFolderName, isDirectory: true)
+        guard let entries = try? FileManager.default.contentsOfDirectory(at: jobs, includingPropertiesForKeys: [.contentModificationDateKey]) else { return [] }
+        let limit = Date().addingTimeInterval(-age)
+        return entries.compactMap { url -> (MCJobFolder, Date)? in
+            let folder = MCJobFolder(url)
+            guard folder.readStatus()?.state == .queued, (try? folder.readJob()) != nil else { return nil }
+            let date = (try? url.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate) ?? .distantPast
+            return date > limit ? (folder, date) : nil
+        }
+        .sorted { $0.1 < $1.1 }
+        .map(\.0)
     }
 }
 
