@@ -1,0 +1,5 @@
+.build/
+App/build/
+App/*.xcodeproj
+Backends/pythia/treelevel-pythia
+*.o

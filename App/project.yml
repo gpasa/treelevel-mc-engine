@@ -1,0 +1,50 @@
+name: TreeLevelMCEngine
+options:
+  bundleIdPrefix: org.pasahome
+  deploymentTarget:
+    macOS: "13.0"
+  createIntermediateGroups: true
+targets:
+  TreeLevelMCEngine:
+    type: application
+    platform: macOS
+    sources:
+      - path: Sources
+      - path: ../Sources/treelevel-mc
+        excludes: ["main.swift"]
+    settings:
+      base:
+        PRODUCT_NAME: TreeLevel MC Engine
+        PRODUCT_BUNDLE_IDENTIFIER: org.pasahome.TreeLevelMCEngine
+        SWIFT_VERSION: "5.10"
+        MACOSX_DEPLOYMENT_TARGET: "13.0"
+        CODE_SIGN_STYLE: Automatic
+        ENABLE_HARDENED_RUNTIME: YES
+        ENABLE_APP_SANDBOX: NO
+        MARKETING_VERSION: "0.1.0"
+        CURRENT_PROJECT_VERSION: "1"
+        GENERATE_INFOPLIST_FILE: NO
+        INFOPLIST_FILE: Info.plist
+    info:
+      path: Info.plist
+      properties:
+        CFBundleName: TreeLevel MC Engine
+        CFBundleDisplayName: TreeLevel MC Engine
+        CFBundleShortVersionString: $(MARKETING_VERSION)
+        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
+        LSMinimumSystemVersion: "13.0"
+        NSPrincipalClass: NSApplication
+        LSApplicationCategoryType: public.app-category.education
+        NSHumanReadableCopyright: "© 2026 Guglielmo Pasa — GNU GPL v3 or later"
+        CFBundleURLTypes:
+          - CFBundleURLName: TreeLevel MC job
+            CFBundleURLSchemes: [treelevel-mc]
+schemes:
+  TreeLevelMCEngine:
+    build:
+      targets:
+        TreeLevelMCEngine: all
+    run:
+      config: Release
+    archive:
+      config: Release
