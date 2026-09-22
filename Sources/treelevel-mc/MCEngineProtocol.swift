@@ -1,3 +1,8 @@
+// SPDX-License-Identifier: MIT
+// Shared between TreeLevel and TreeLevel MC Engine — keep the two copies identical.
+// Copyright (c) 2026 Guglielmo Pasa. Permission is hereby granted, free of charge, to any person obtaining a
+// copy of this file, to deal in it without restriction, provided this notice is kept.
+
 import Foundation
 
 /// Exchange format between TreeLevel and the external "TreeLevel MC Engine": a job folder holding the job
