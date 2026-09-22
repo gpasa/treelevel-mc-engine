@@ -24,11 +24,17 @@ accèdent, personne d'autre.
 
 1. Télécharger `TreeLevel MC Engine.app` depuis les *releases* et la glisser dans `/Applications`.
 2. Installer un générateur :
-   - **Pythia 8** — `brew install pythia` (ou MacPorts, ou une compilation locale), puis
-     `make -C Backends/pythia install` pour construire le petit pilote `treelevel-pythia` et le placer dans
-     `~/Library/Application Support/TreeLevel MC Engine/Modules/pythia8/`.
-   - **Herwig 7** — `brew install herwig` (ou l'installation officielle) ; le moteur cherche `Herwig` dans les
-     emplacements habituels et dans `~/Library/Application Support/TreeLevel MC Engine/Modules/herwig7/bin`.
+   - **Pythia 8** — `sudo port install pythia` (MacPorts), puis `make -C Backends/pythia install` : cela
+     construit le petit pilote `treelevel-pythia` et le place dans
+     `~/Library/Application Support/TreeLevel MC Engine/Modules/pythia8/`. Le Makefile trouve Pythia par
+     `pythia8-config` s'il existe, sinon dans les dispositions habituelles de MacPorts, de Homebrew ou d'une
+     compilation locale. **HepMC3 n'est pas nécessaire** : le pilote écrit lui-même le fichier HepMC3 (le port
+     `pythia` de MacPorts ne fournit ni Pythia8Plugins ni HepMC3). Avec un Pythia compilé avec son interface
+     HepMC3, `make WITH_HEPMC3=1` l'utilise à la place.
+   - **Herwig 7** — il n'existe pas de port MacPorts ; utiliser le script d'installation officiel
+     (`herwig-bootstrap`) ou un autre gestionnaire. Le moteur cherche `Herwig` dans
+     `~/Library/Application Support/TreeLevel MC Engine/Modules/herwig7/bin`, puis dans `/opt/local/bin`,
+     `/usr/local/bin` et `/opt/homebrew/bin`, et ignore une installation cassée (bibliothèque manquante).
 3. Lancer l'application une fois : elle écrit `capabilities.json` dans son dossier de support, et TreeLevel
    propose alors les générateurs trouvés.
 

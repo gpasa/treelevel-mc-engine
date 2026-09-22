@@ -1,20 +1,39 @@
-# Builds the Pythia 8 driver of the engine. Needs Pythia 8 (with HepMC3 support) and pythia8-config in PATH.
+# Builds the Pythia 8 driver of the engine.
+#
 #   make            build ./treelevel-pythia
-#   make install    copy it beside the engine's modules (~/Library/Application Support/TreeLevel MC Engine/Modules/pythia8)
-PYTHIA_CONFIG ?= pythia8-config
+#   make install    copy it into ~/Library/Application Support/TreeLevel MC Engine/Modules/pythia8
+#
+# Pythia is found through pythia8-config when it is in the PATH, otherwise in the usual MacPorts and Homebrew
+# layouts. HepMC3 is not needed: the driver writes the HepMC3 file itself. If Pythia was built with its own
+# HepMC3 interface and you would rather use it, build with:  make WITH_HEPMC3=1
 CXX ?= c++
 CXXFLAGS ?= -O2 -std=c++17
-HEPMC_PREFIX ?= $(shell $(PYTHIA_CONFIG) --prefix)
 MODULES ?= $(HOME)/Library/Application Support/TreeLevel MC Engine/Modules/pythia8
 
-FLAGS := $(shell $(PYTHIA_CONFIG) --cxxflags) $(shell $(PYTHIA_CONFIG) --libs)
-HEPMC := $(shell pkg-config --cflags --libs HepMC3 2>/dev/null)
-ifeq ($(strip $(HEPMC)),)
-HEPMC := -I/opt/homebrew/include -L/opt/homebrew/lib -lHepMC3 -Wl,-rpath,/opt/homebrew/lib
+PYTHIA_CONFIG := $(shell command -v pythia8-config 2>/dev/null)
+ifneq ($(PYTHIA_CONFIG),)
+  FLAGS := $(shell $(PYTHIA_CONFIG) --cxxflags) $(shell $(PYTHIA_CONFIG) --libs)
+else ifneq ($(wildcard /opt/local/include/pythia/Pythia8/Pythia.h),)
+  # MacPorts: headers under include/pythia, no pythia8-config, xmldoc in share/doc/pythia
+  FLAGS := -I/opt/local/include/pythia -L/opt/local/lib -lpythia8 -Wl,-rpath,/opt/local/lib
+else ifneq ($(wildcard /opt/homebrew/include/Pythia8/Pythia.h),)
+  FLAGS := -I/opt/homebrew/include -L/opt/homebrew/lib -lpythia8 -Wl,-rpath,/opt/homebrew/lib
+else ifneq ($(wildcard /usr/local/include/Pythia8/Pythia.h),)
+  FLAGS := -I/usr/local/include -L/usr/local/lib -lpythia8 -Wl,-rpath,/usr/local/lib
+else
+  $(error Pythia 8 not found — install it (MacPorts: sudo port install pythia) or put pythia8-config in the PATH)
+endif
+
+ifdef WITH_HEPMC3
+  HEPMC := $(shell pkg-config --cflags --libs HepMC3 2>/dev/null)
+  ifeq ($(strip $(HEPMC)),)
+    HEPMC := -I/opt/homebrew/include -L/opt/homebrew/lib -lHepMC3 -Wl,-rpath,/opt/homebrew/lib
+  endif
+  FLAGS += -DTREELEVEL_WITH_HEPMC3 $(HEPMC)
 endif
 
 treelevel-pythia: main.cpp
-	$(CXX) $(CXXFLAGS) $< -o $@ $(FLAGS) $(HEPMC)
+	$(CXX) $(CXXFLAGS) $< -o $@ $(FLAGS)
 
 install: treelevel-pythia
 	mkdir -p "$(MODULES)"

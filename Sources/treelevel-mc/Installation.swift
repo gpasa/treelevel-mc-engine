@@ -22,6 +22,7 @@ enum Installation {
     static var pythiaDriver: URL? {
         var candidates = [URL(fileURLWithPath: CommandLine.arguments[0]).deletingLastPathComponent().appendingPathComponent("treelevel-pythia"),
                           modulesDirectory.appendingPathComponent("pythia8/treelevel-pythia"),
+                          URL(fileURLWithPath: "/opt/local/bin/treelevel-pythia"),      // MacPorts
                           URL(fileURLWithPath: "/usr/local/bin/treelevel-pythia"),
                           URL(fileURLWithPath: "/opt/homebrew/bin/treelevel-pythia")]
         if let resources = Bundle.main.resourceURL { candidates.insert(resources.appendingPathComponent("treelevel-pythia"), at: 1) }
@@ -31,9 +32,9 @@ enum Installation {
     /// Herwig's command line (`Herwig read` then `Herwig run`).
     static var herwig: URL? {
         let candidates = [modulesDirectory.appendingPathComponent("herwig7/bin/Herwig"),
-                          URL(fileURLWithPath: "/opt/homebrew/bin/Herwig"),
-                          URL(fileURLWithPath: "/opt/local/bin/Herwig"),
-                          URL(fileURLWithPath: "/usr/local/bin/Herwig")]
+                          URL(fileURLWithPath: "/opt/local/bin/Herwig"),                // MacPorts
+                          URL(fileURLWithPath: "/usr/local/bin/Herwig"),
+                          URL(fileURLWithPath: "/opt/homebrew/bin/Herwig")]
         return candidates.first { FileManager.default.isExecutableFile(atPath: $0.path) }
     }
 
