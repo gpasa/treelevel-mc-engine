@@ -124,8 +124,9 @@ struct Runner {
         saverun \(name) EventGenerator
         """
         try input.write(to: folder.url.appendingPathComponent("\(name).in"), atomically: true, encoding: .utf8)
-        guard try runProcess(herwig, ["read", "\(name).in"], start: start, name: "Herwig 7", step: "lecture de la configuration", finishNow: false) else { return false }
-        return try runProcess(herwig, ["run", "\(name).run", "-N", "\(job.events)"], start: start, name: "Herwig 7")
+        let version = Installation.capabilities(engineVersion: engineVersion).versions["herwig7"] ?? "Herwig 7"
+        guard try runProcess(herwig, ["read", "\(name).in"], start: start, name: version, step: "lecture de la configuration", finishNow: false) else { return false }
+        return try runProcess(herwig, ["run", "\(name).run", "-N", "\(job.events)"], start: start, name: version)
     }
 
     // MARK: Running a generator
@@ -140,6 +141,14 @@ struct Runner {
         process.currentDirectoryURL = folder.url
         var environment = ProcessInfo.processInfo.environment
         environment["TREELEVEL_JOB"] = job.id
+        // A module's plugins ask for @rpath/libHepMC3, and the rpath they were linked with is the build
+        // machine's. Ours is beside the program, so name it here rather than rewriting the binaries.
+        let lib = url.deletingLastPathComponent().deletingLastPathComponent().appendingPathComponent("lib")
+        if FileManager.default.fileExists(atPath: lib.path) {
+            let paths = [lib.path, lib.appendingPathComponent("ThePEG").path, lib.appendingPathComponent("Herwig").path]
+            environment["DYLD_FALLBACK_LIBRARY_PATH"] =
+                (paths + [environment["DYLD_FALLBACK_LIBRARY_PATH"] ?? "/usr/local/lib:/usr/lib"]).joined(separator: ":")
+        }
         process.environment = environment
         let pipe = Pipe()
         process.standardOutput = pipe
@@ -177,7 +186,7 @@ struct Runner {
             return finish(failed: "\(name) stopped with code \(process.terminationStatus) — see engine.log", start: start)
         }
         guard finishNow else { return true }
-        let written = countEvents(in: folder.outputURL(job))
+        let (written, sigma, sigmaError) = summary(of: folder.outputURL(job))
         guard written > 0 else { return finish(failed: "\(name) wrote no event — see engine.log", start: start) }
         var done = MCStatus(state: .finished, jobID: job.id)
         done.number = number
@@ -187,7 +196,8 @@ struct Runner {
         done.generatorVersion = name
         done.progress = 1
         done.seconds = Date().timeIntervalSince(start)
-        done.crossSection = crossSection(in: folder.outputURL(job))
+        done.crossSection = sigma
+        done.crossSectionError = sigmaError
         publish(done)
         return true
     }
@@ -211,19 +221,27 @@ struct Runner {
         return numbers.max()
     }
 
-    /// Events in a HepMC3 file: the `E` lines.
-    private func countEvents(in url: URL) -> Int {
-        guard let text = try? String(contentsOf: url, encoding: .utf8) else { return 0 }
-        return text.split(separator: "\n").filter { $0.hasPrefix("E ") }.count
-    }
-
-    /// Cross section from the last `A 0 GenCrossSection` attribute of the HepMC3 file.
-    private func crossSection(in url: URL) -> Double? {
-        guard let text = try? String(contentsOf: url, encoding: .utf8) else { return nil }
-        for line in text.split(separator: "\n") where line.hasPrefix("A 0 GenCrossSection") {
-            let f = line.split(separator: " ")
-            if f.count >= 4, let v = Double(f[3]) { return v }
+    /// One pass over the HepMC3 file: the `E` lines are the events, and the cross section is whatever the
+    /// last event says — `C sigma error` in the Asciiv3 format Herwig writes, or the `GenCrossSection`
+    /// attribute other writers attach. The last one wins: a generator refines it as it goes.
+    private func summary(of url: URL) -> (events: Int, crossSection: Double?, error: Double?) {
+        guard let text = try? String(contentsOf: url, encoding: .utf8) else { return (0, nil, nil) }
+        var events = 0
+        var sigma: Double?
+        var sigmaError: Double?
+        for line in text.split(separator: "\n") {
+            if line.hasPrefix("E ") {
+                events += 1
+            } else if line.hasPrefix("C ") {
+                let f = line.split(separator: " ")
+                if f.count >= 2, let v = Double(f[1]) { sigma = v }
+                if f.count >= 3, let v = Double(f[2]) { sigmaError = v }
+            } else if line.hasPrefix("A 0 GenCrossSection") {
+                let f = line.split(separator: " ")
+                if f.count >= 4, let v = Double(f[3]) { sigma = v }
+                if f.count >= 5, let v = Double(f[4]) { sigmaError = v }
+            }
         }
-        return nil
+        return (events, sigma, sigmaError)
     }
 }

@@ -79,6 +79,49 @@ make -C Backends/pythia          # ./treelevel-pythia
 make -C Backends/pythia install  # dans Modules/pythia8/
 ```
 
+## Construire le module Herwig 7
+
+Aucun gestionnaire de paquets macOS ne fournit Herwig : ni MacPorts, ni Homebrew hors d'un tap non maintenu
+(dont les binaires sont liés à une version de GSL qui n'existe plus). Il se construit donc depuis les sources,
+avec le bootstrap officiel, et quatre précautions que la chaîne d'outils de 2026 impose :
+
+```bash
+# gcc de MacPorts, jamais clang : les constructeurs globaux de ThePEG appellent std::string avant que
+# l'initialiseur de libc++ ait tourné, et l'allocation typée d'Apple clang 21 avorte à cet endroit précis.
+printf '#!/bin/sh\nexec /opt/local/bin/gfortran-mp-15 -fno-range-check "$@"\n' > ~/Library/TreeLevelMC/tools/gfortran-tl
+chmod +x ~/Library/TreeLevelMC/tools/gfortran-tl
+
+curl -LO https://herwig.hepforge.org/downloads/herwig-bootstrap
+env PATH="$HOME/Library/TreeLevelMC/tools:/opt/local/bin:/usr/bin:/bin" \
+    CC=/opt/local/bin/gcc-mp-15 CXX=/opt/local/bin/g++-mp-15 FC="$HOME/Library/TreeLevelMC/tools/gfortran-tl" \
+    python3.13 herwig-bootstrap --lite -j 12 \
+      --with-gsl=/opt/local --with-boost=/opt/local \
+      --with-fastjet="$HOME/Library/TreeLevelMC/herwig7" \
+      "$HOME/Library/TreeLevelMC/herwig7"
+
+ln -s ~/Library/TreeLevelMC/herwig7 ~/Library/Application\ Support/TreeLevel\ MC\ Engine/Modules/herwig7
+```
+
+Les quatre pièges, pour mémoire :
+
+- **FastJet** : le greffon `D0RunIICone`, activé par `--enable-allcxxplugins`, ne compile plus (`this->_Et`,
+  recherche de nom en deux phases). Herwig n'en a pas besoin : construire FastJet à part sans les greffons
+  optionnels, et le passer par `--with-fastjet`.
+- **LHAPDF** : son enrobage Python ne trouve pas `libpython` dans un *framework* MacPorts. Configurer avec
+  `--disable-python` — et récupérer alors les jeux de PDF à la main, le script `lhapdf install` important ce
+  même module.
+- **ThePEG** : voir ci-dessus, d'où gcc plutôt que clang. Toute la pile (FastJet, HepMC3, LHAPDF) doit suivre,
+  sans quoi les ABI C++ ne s'accordent pas.
+- **LoopTools** : `parameter (nz2 = -2147483648)` déborde pour gfortran 15, d'où le `-fno-range-check` glissé
+  dans le compilateur enrobé — `configure` écrase `FCFLAGS`, le drapeau ne peut pas passer par l'environnement.
+
+Le dossier `lib/ThePEG` contient des greffons liés à `@rpath/libHepMC3`, dont le rpath est celui de la machine
+de construction ; le moteur pose `DYLD_FALLBACK_LIBRARY_PATH` sur les `lib` du module, donc il n'y a rien à
+retoucher.
+
+Mesuré sur un e⁻e⁺ → W⁺W⁻ à 200 GeV, 10 000 événements partoniques écrits par TreeLevel : **12,2 s** de
+cascade et d'hadronisation (Pythia 8 : 6,4 s).
+
 ## Publier une version
 
 Tout se passe sur la machine du développeur : la clé Developer ID ne quitte pas le trousseau, rien n'est confié
