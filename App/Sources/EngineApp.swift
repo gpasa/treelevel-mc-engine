@@ -40,7 +40,21 @@ final class EngineDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
+    /// The engine keeps running with its window closed (a job may be under way); opening it again must bring
+    /// the window back rather than just activate an invisible application.
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { false }
+
+    func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
+        if !flag { showWindow() }
+        return true
+    }
+
+    private func showWindow() {
+        if let window = NSApp.windows.first(where: { $0.canBecomeMain }) {
+            window.makeKeyAndOrderFront(nil)
+        }
+        NSApp.activate(ignoringOtherApps: true)
+    }
 }
 
 /// What the window shows: the jobs this launch has run, and the modules found.
@@ -133,15 +147,30 @@ struct EngineWindow: View {
                 Text("Rien pour l'instant. TreeLevel ouvre ce programme quand vous choisissez un générateur externe.")
                     .foregroundStyle(.secondary)
             }
-            List(state.entries) { e in
-                VStack(alignment: .leading, spacing: 2) {
-                    Text("\(e.number). \(e.process) — \(e.generator)").bold()
-                    Text(label(e)).font(.callout).foregroundStyle(.secondary)
-                    Text(times(e)).font(.callout).foregroundStyle(.secondary)
-                }
-                .contextMenu {
-                    Button("Révéler le dossier du travail") { NSWorkspace.shared.activateFileViewerSelecting([URL(fileURLWithPath: e.folder)]) }
-                    Button("Ouvrir le journal") { NSWorkspace.shared.open(URL(fileURLWithPath: e.folder).appendingPathComponent(MCEngineProtocol.logFileName)) }
+            // A plain scrolling stack rather than a List: the first row of a List was starting scrolled,
+            // which hid the number and the process of the newest job.
+            ScrollView {
+                LazyVStack(alignment: .leading, spacing: 0) {
+                    ForEach(state.entries) { e in
+                        HStack(alignment: .firstTextBaseline, spacing: 10) {
+                            Text("\(e.number).")
+                                .font(.body.monospacedDigit()).foregroundStyle(.secondary)
+                                .frame(width: 34, alignment: .trailing)
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text("\(e.process) — \(e.generator)").bold()
+                                Text(label(e) + (times(e).isEmpty ? "" : " · " + times(e)))
+                                    .font(.callout).foregroundStyle(.secondary)
+                            }
+                            Spacer(minLength: 0)
+                        }
+                        .padding(.vertical, 6)
+                        .contentShape(Rectangle())
+                        .contextMenu {
+                            Button("Révéler le dossier du travail") { NSWorkspace.shared.activateFileViewerSelecting([URL(fileURLWithPath: e.folder)]) }
+                            Button("Ouvrir le journal") { NSWorkspace.shared.open(URL(fileURLWithPath: e.folder).appendingPathComponent(MCEngineProtocol.logFileName)) }
+                        }
+                        Divider()
+                    }
                 }
             }
             .frame(minHeight: 160)
