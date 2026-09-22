@@ -20,6 +20,19 @@ Le dossier de travail est dans le conteneur de TreeLevel
 (`~/Library/Containers/org.pasahome.Feyn/Data/Library/Application Support/MCJobs/<id>`) : les deux programmes y
 accèdent, personne d'autre.
 
+## Où vivent les exécutables
+
+Une seule règle : **tout ce qui se lance est dans `~/Applications`** — `TreeLevel MC Engine.app` et, pendant le
+développement, `TreeLevel (dev).app`. Les dossiers `build/` et `.build/` des dépôts ne contiennent que des
+résultats de compilation jetables ; `scripts/install.sh` dépose la version bonne à l'emploi dans
+`~/Applications` et retire les copies de compilation du registre de LaunchServices, pour qu'elles ne soient
+jamais lancées par erreur. `/Applications` reste réservé aux applications installées par l'App Store.
+
+```bash
+scripts/install.sh      # construit et installe dans ~/Applications, avec le module Pythia
+scripts/release.sh      # construit, signe, notarise et fabrique le .dmg à distribuer
+```
+
 ## Installation
 
 1. Télécharger `TreeLevel MC Engine.app` depuis les *releases* et la glisser dans `/Applications`.
