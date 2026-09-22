@@ -6,12 +6,22 @@ struct Runner {
     var folder: MCJobFolder
     var job: MCJob
     var engineVersion: String
+    /// Number of the job in this run of the engine, shown in its window and in TreeLevel.
+    var number: Int = 0
+
+    /// Writes the status in the job folder and keeps the engine's list of jobs in step.
+    private func publish(_ status: MCStatus) {
+        try? folder.write(status: status)
+        JobHistory.record(JobHistory.entry(job: job, folder: folder, status: status))
+    }
 
     func run() -> Bool {
         let start = Date()
         var status = MCStatus(state: .running, jobID: job.id)
+        status.number = number
+        status.started = start
         status.message = "préparation"
-        try? folder.write(status: status)
+        publish(status)
         guard FileManager.default.fileExists(atPath: folder.inputURL(job).path) else {
             return finish(failed: "the job has no input file (\(job.input))", start: start)
         }
@@ -34,12 +44,15 @@ struct Runner {
         let events = try LesHouchesLite.read(folder.inputURL(job))
         try LesHouchesLite.writeHepMC(events, to: folder.outputURL(job), crossSection: events.crossSection)
         var status = MCStatus(state: .finished, jobID: job.id)
+        status.number = number
+        status.started = start
+        status.finished = Date()
         status.eventsWritten = events.events.count
         status.crossSection = events.crossSection
         status.generatorVersion = "TreeLevel MC Engine \(engineVersion) (sans gerbe)"
         status.progress = 1
         status.seconds = Date().timeIntervalSince(start)
-        try folder.write(status: status)
+        publish(status)
         return true
     }
 
@@ -136,9 +149,11 @@ struct Runner {
         log.seekToEndOfFile()
 
         var status = MCStatus(state: .running, jobID: job.id)
+        status.number = number
+        status.started = start
         status.generatorVersion = name
         status.message = step ?? "génération"
-        try? folder.write(status: status)
+        publish(status)
 
         pipe.fileHandleForReading.readabilityHandler = { handle in
             let data = handle.availableData
@@ -151,7 +166,7 @@ struct Runner {
                 var s = status
                 s.eventsWritten = n
                 s.progress = job.events > 0 ? min(1, Double(n) / Double(job.events)) : nil
-                try? folder.write(status: s)
+                publish(s)
             }
         }
         try process.run()
@@ -165,20 +180,26 @@ struct Runner {
         let written = countEvents(in: folder.outputURL(job))
         guard written > 0 else { return finish(failed: "\(name) wrote no event — see engine.log", start: start) }
         var done = MCStatus(state: .finished, jobID: job.id)
+        done.number = number
+        done.started = start
+        done.finished = Date()
         done.eventsWritten = written
         done.generatorVersion = name
         done.progress = 1
         done.seconds = Date().timeIntervalSince(start)
         done.crossSection = crossSection(in: folder.outputURL(job))
-        try folder.write(status: done)
+        publish(done)
         return true
     }
 
     private func finish(failed message: String, start: Date) -> Bool {
         var status = MCStatus(state: .failed, jobID: job.id)
+        status.number = number
+        status.started = start
+        status.finished = Date()
         status.message = message
         status.seconds = Date().timeIntervalSince(start)
-        try? folder.write(status: status)
+        publish(status)
         FileHandle.standardError.write(("treelevel-mc: " + message + "\n").data(using: .utf8)!)
         return false
     }

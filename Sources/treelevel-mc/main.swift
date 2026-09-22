@@ -49,7 +49,7 @@ case "run":
         try? folder.write(status: status)
         fail("job protocol \(job.protocolVersion) is newer than this engine (\(MCEngineProtocol.version))")
     }
-    let runner = Runner(folder: folder, job: job, engineVersion: engineVersion)
+    let runner = Runner(folder: folder, job: job, engineVersion: engineVersion, number: Installation.nextJobNumber())
     exit(runner.run() ? 0 : 1)
 default:
     fail("unknown command '\(command)'")

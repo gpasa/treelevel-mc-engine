@@ -19,6 +19,7 @@ struct EngineApp: App {
 final class EngineDelegate: NSObject, NSApplicationDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) {
         EngineState.shared.refreshCapabilities()
+        EngineState.shared.reloadHistory()
         // `run <folder>` on the command line, or a job folder dropped on the application.
         let args = Array(CommandLine.arguments.dropFirst())
         if args.count >= 2, args[0] == "run" { EngineState.shared.run(folder: URL(fileURLWithPath: args[1], isDirectory: true)) }
@@ -46,13 +47,15 @@ final class EngineDelegate: NSObject, NSApplicationDelegate {
 @MainActor
 final class EngineState: ObservableObject {
     static let shared = EngineState()
-    struct Entry: Identifiable { var id = UUID(); var process: String; var generator: String; var status: MCStatus }
-
-    @Published var entries: [Entry] = []
+    @Published var entries: [JobHistory.Entry] = []
     @Published var capabilities: MCCapabilities?
     let version = "0.1.1"
 
+
     func refreshCapabilities() { capabilities = Installation.publishCapabilities(engineVersion: version) }
+
+    /// The list of jobs lives in the support folder and survives between launches.
+    func reloadHistory() { entries = JobHistory.load() }
 
     /// Runs the jobs TreeLevel has left queued in its container, ignoring the ones already taken.
     func takePendingJobs() {
@@ -62,27 +65,34 @@ final class EngineState: ObservableObject {
     }
     private var taken = Set<String>()
 
+    func clearHistory() {
+        JobHistory.save([])
+        entries = []
+    }
+
     /// Runs a job on a background queue and keeps the window in step with its status file.
     func run(folder url: URL) {
         let folder = MCJobFolder(url)
         guard let job = try? folder.readJob(), !taken.contains(url.path) else { return }
         taken.insert(url.path)
-        let entry = Entry(process: job.process, generator: job.generator.label, status: MCStatus(state: .queued, jobID: job.id))
-        entries.insert(entry, at: 0)
-        let id = entry.id
+        let number = Installation.nextJobNumber()
+        var queued = MCStatus(state: .queued, jobID: job.id)
+        queued.number = number
+        entries = JobHistory.record(JobHistory.entry(job: job, folder: folder, status: queued))
         let version = version
         Task.detached(priority: .userInitiated) {
-            let runner = Runner(folder: folder, job: job, engineVersion: version)
+            let runner = Runner(folder: folder, job: job, engineVersion: version, number: number)
+            // The runner keeps the list up to date as it goes; the window follows it.
             let watcher = Task { @MainActor in
                 while !Task.isCancelled {
                     try? await Task.sleep(nanoseconds: 300_000_000)
-                    if let s = folder.readStatus(), let k = self.entries.firstIndex(where: { $0.id == id }) { self.entries[k].status = s }
+                    self.reloadHistory()
                 }
             }
             _ = runner.run()
             watcher.cancel()
             await MainActor.run {
-                if let s = folder.readStatus(), let k = self.entries.firstIndex(where: { $0.id == id }) { self.entries[k].status = s }
+                self.reloadHistory()
                 self.refreshCapabilities()
             }
         }
@@ -111,33 +121,54 @@ struct EngineWindow: View {
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
-            Text("Travaux").font(.headline)
+            HStack {
+                Text("Travaux").font(.headline)
+                Spacer()
+                if !state.entries.isEmpty {
+                    Button("Vider la liste") { state.clearHistory() }
+                        .help("Oublie les travaux passés ; les dossiers et leurs journaux restent où ils sont")
+                }
+            }
             if state.entries.isEmpty {
                 Text("Rien pour l'instant. TreeLevel ouvre ce programme quand vous choisissez un générateur externe.")
                     .foregroundStyle(.secondary)
             }
             List(state.entries) { e in
                 VStack(alignment: .leading, spacing: 2) {
-                    Text("\(e.process) — \(e.generator)").bold()
-                    HStack {
-                        Text(label(e.status)).foregroundStyle(.secondary)
-                        if let p = e.status.progress, e.status.state == .running { ProgressView(value: p).frame(width: 120) }
-                    }
-                    .font(.callout)
+                    Text("\(e.number). \(e.process) — \(e.generator)").bold()
+                    Text(label(e)).font(.callout).foregroundStyle(.secondary)
+                    Text(times(e)).font(.callout).foregroundStyle(.secondary)
+                }
+                .contextMenu {
+                    Button("Révéler le dossier du travail") { NSWorkspace.shared.activateFileViewerSelecting([URL(fileURLWithPath: e.folder)]) }
+                    Button("Ouvrir le journal") { NSWorkspace.shared.open(URL(fileURLWithPath: e.folder).appendingPathComponent(MCEngineProtocol.logFileName)) }
                 }
             }
-            .frame(minHeight: 140)
+            .frame(minHeight: 160)
         }
         .padding(20)
         .frame(minWidth: 520, minHeight: 420)
     }
 
-    private func label(_ s: MCStatus) -> String {
-        switch s.state {
+    /// "22 sept. 22:41:07 → 22:41:14 (6,4 s)"
+    private func times(_ e: JobHistory.Entry) -> String {
+        guard let started = e.started else { return "" }
+        let day = Date.FormatStyle(date: .abbreviated, time: .standard)
+        let clock = Date.FormatStyle(date: .omitted, time: .standard)
+        var text = started.formatted(Calendar.current.isDateInToday(started) ? clock : day)
+        if let finished = e.finished {
+            let seconds = e.seconds ?? finished.timeIntervalSince(started)
+            text += " → " + finished.formatted(clock) + String(format: " (%.1f s)", seconds)
+        }
+        return text
+    }
+
+    private func label(_ e: JobHistory.Entry) -> String {
+        switch e.state {
         case .queued: return "en attente"
-        case .running: return "\(s.eventsWritten) événements…"
-        case .finished: return "terminé — \(s.eventsWritten) événements" + (s.seconds.map { String(format: " en %.1f s", $0) } ?? "")
-        case .failed: return "échec : " + (s.message ?? "")
+        case .running: return "\(e.events) événements…"
+        case .finished: return "terminé — \(e.events) événements"
+        case .failed: return "échec : " + (e.message ?? "")
         case .cancelled: return "annulé"
         }
     }

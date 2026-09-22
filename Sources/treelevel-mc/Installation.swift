@@ -71,6 +71,15 @@ enum Installation {
         return caps
     }
 
+    /// Jobs are numbered once and for all, in the order the engine takes them, whichever way it was started.
+    static func nextJobNumber() -> Int {
+        let url = supportDirectory.appendingPathComponent("counter.txt")
+        let current = (try? String(contentsOf: url, encoding: .utf8)).flatMap { Int($0.trimmingCharacters(in: .whitespacesAndNewlines)) } ?? 0
+        let next = current + 1
+        try? "\(next)\n".write(to: url, atomically: true, encoding: .utf8)
+        return next
+    }
+
     /// Jobs TreeLevel has left in its container and that nobody has started: the engine picks them up when it
     /// is opened, so a job is never lost if the URL does not reach it.
     static func pendingJobs(newerThan age: TimeInterval = 3600) -> [MCJobFolder] {

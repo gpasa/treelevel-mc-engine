@@ -112,6 +112,11 @@ public struct MCStatus: Codable, Equatable {
     /// Name and version of what actually ran ("Pythia 8.310").
     public var generatorVersion: String?
     public var seconds: Double?
+    /// Number given by the engine when it takes the job, so that the two programs and the user name it the
+    /// same way ("travail 7").
+    public var number: Int?
+    public var started: Date?
+    public var finished: Date?
 
     public init(state: State, jobID: String) {
         self.state = state

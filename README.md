@@ -49,6 +49,10 @@ swift build -c release
 Le dossier contient `job.json` (généré par TreeLevel, format décrit dans `Protocol/MCEngineProtocol.swift`),
 `events.lhe` en entrée, puis `status.json`, `engine.log` et `events.hepmc` en sortie.
 
+Chaque travail reçoit un numéro (compteur gardé dans le dossier de support), l'heure de début et de fin, et
+s'ajoute à la liste `jobs.json` que la fenêtre affiche — elle survit aux relancements, un clic droit sur une
+ligne ouvre le dossier du travail ou son journal, et « Vider la liste » l'oublie sans rien effacer sur le disque.
+
 Trois générateurs : `pythia8`, `herwig7` et `passthrough` (aucune gerbe — les événements sont convertis tels
 quels, pour vérifier la chaîne ou comparer avec le processus dur).
 
