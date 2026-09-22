@@ -38,6 +38,15 @@ enum Installation {
         return candidates.first { FileManager.default.isExecutableFile(atPath: $0.path) }
     }
 
+    /// Sherpa's command line. It computes its own matrix elements, so it needs no driver of ours.
+    static var sherpa: URL? {
+        let candidates = [modulesDirectory.appendingPathComponent("sherpa3/bin/Sherpa"),
+                          URL(fileURLWithPath: "/opt/local/bin/Sherpa"),                // MacPorts
+                          URL(fileURLWithPath: "/usr/local/bin/Sherpa"),
+                          URL(fileURLWithPath: "/opt/homebrew/bin/Sherpa")]
+        return candidates.first { FileManager.default.isExecutableFile(atPath: $0.path) }
+    }
+
     static func capabilities(engineVersion: String) -> MCCapabilities {
         var generators: [MCJob.Generator] = [.passthrough]
         var versions: [String: String] = [:]
@@ -50,6 +59,11 @@ enum Installation {
            !v.contains("dyld"), !v.contains("not loaded"), v.lowercased().contains("herwig") {
             generators.append(.herwig7)
             versions[MCJob.Generator.herwig7.rawValue] = String(v).trimmingCharacters(in: .whitespaces)
+        }
+        if let sherpa, let v = Process.output(sherpa, ["--version"])?.split(separator: "\n").first,
+           !v.contains("dyld"), !v.contains("not loaded"), v.lowercased().contains("sherpa") {
+            generators.append(.sherpa3)
+            versions[MCJob.Generator.sherpa3.rawValue] = String(v).trimmingCharacters(in: .whitespaces)
         }
         var caps = MCCapabilities(engineVersion: engineVersion, generators: generators)
         caps.versions = versions

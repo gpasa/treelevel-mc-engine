@@ -13,7 +13,8 @@ import Foundation
 /// separately and under different licences, always agree on the protocol.
 public enum MCEngineProtocol {
     /// Bumped when the format changes in a way an older engine could not read.
-    public static let version = 1
+    /// 2: a job may describe a process instead of carrying events, for the generators that compute their own.
+    public static let version = 2
     public static let jobFileName = "job.json"
     public static let inputFileName = "events.lhe"
     public static let statusFileName = "status.json"
@@ -52,14 +53,24 @@ public enum MCEngineProtocol {
 /// What to run on the parton-level events.
 public struct MCJob: Codable, Equatable {
     public enum Generator: String, Codable, CaseIterable {
-        case pythia8, herwig7
+        case pythia8, herwig7, sherpa3
         /// No shower: the events are copied through, to check the plumbing.
         case passthrough
         public var label: String {
             switch self {
             case .pythia8: return "Pythia 8"
             case .herwig7: return "Herwig 7"
+            case .sherpa3: return "Sherpa 3"
             case .passthrough: return "sans gerbe"
+            }
+        }
+        /// Whether the generator starts from the events TreeLevel wrote, or computes the process itself.
+        /// Sherpa has no Les Houches reader — it only writes that format — so it belongs to the second
+        /// family, with the matrix-element generators.
+        public var readsLesHouches: Bool {
+            switch self {
+            case .pythia8, .herwig7, .passthrough: return true
+            case .sherpa3: return false
             }
         }
     }
@@ -84,6 +95,9 @@ public struct MCJob: Codable, Equatable {
     public var tune: String?
     /// Extra generator commands, one per line, passed through as they are (Pythia `readString`, Herwig `.in`).
     public var extraSettings: String?
+    /// What to compute, for a generator that does not read the events TreeLevel wrote (`readsLesHouches`
+    /// is false). TreeLevel fills it from the diagram; it is ignored by the others.
+    public var hardProcess: MCProcess?
     /// Files, relative to the job folder.
     public var input = MCEngineProtocol.inputFileName
     public var output = MCEngineProtocol.outputFileName
@@ -95,6 +109,37 @@ public struct MCJob: Codable, Equatable {
         self.events = events
         self.seed = seed
     }
+}
+
+/// A hard process described so that a generator can compute it by itself: beams, energies, final state and
+/// the coupling orders that pick the right diagrams. Deliberately small — everything else is the generator's
+/// own business, and its defaults are better than anything we would invent.
+public struct MCProcess: Codable, Equatable {
+    /// PDG codes of the two beams (11 and -11 for an electron–positron machine).
+    public var beams: [Int]
+    /// Energy of each beam in GeV, so that asymmetric machines can be written down.
+    public var beamEnergies: [Double]
+    /// PDG codes of the hard final state.
+    public var finalState: [Int]
+    /// Coupling orders of the hard process, by the name generators use ("QCD", "EW").
+    public var couplingOrders: [String: Int]
+    /// Minimum transverse momentum of the final state in GeV; nil keeps the generator's own cuts.
+    public var minimumPT: Double?
+    /// Physics model. Only "SM" for now, but a generator that reads UFO files could take more.
+    public var model: String
+
+    public init(beams: [Int], beamEnergies: [Double], finalState: [Int],
+                couplingOrders: [String: Int] = [:], minimumPT: Double? = nil, model: String = "SM") {
+        self.beams = beams
+        self.beamEnergies = beamEnergies
+        self.finalState = finalState
+        self.couplingOrders = couplingOrders
+        self.minimumPT = minimumPT
+        self.model = model
+    }
+
+    /// Centre-of-mass energy of a head-on collision.
+    public var centreOfMassEnergy: Double { beamEnergies.reduce(0, +) }
 }
 
 /// How far the job has got; the engine rewrites it as it runs.

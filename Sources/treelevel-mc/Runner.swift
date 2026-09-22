@@ -22,7 +22,9 @@ struct Runner {
         status.started = start
         status.message = "préparation"
         publish(status)
-        guard FileManager.default.fileExists(atPath: folder.inputURL(job).path) else {
+        // A generator that computes its own matrix elements is given a process, not events.
+        if job.generator.readsLesHouches,
+           !FileManager.default.fileExists(atPath: folder.inputURL(job).path) {
             return finish(failed: "the job has no input file (\(job.input))", start: start)
         }
         do {
@@ -30,6 +32,7 @@ struct Runner {
             case .passthrough: return try passthrough(start: start)
             case .pythia8: return try pythia(start: start)
             case .herwig7: return try herwig(start: start)
+            case .sherpa3: return try sherpa(start: start)
             }
         } catch {
             return finish(failed: error.localizedDescription, start: start)
@@ -129,6 +132,42 @@ struct Runner {
         return try runProcess(herwig, ["run", "\(name).run", "-N", "\(job.events)"], start: start, name: version)
     }
 
+    /// Sherpa 3: it has no Les Houches reader, so it is given the process itself, as a YAML run card.
+    /// It computes the matrix element (Comix), showers, hadronises and writes the HepMC3 itself.
+    private func sherpa(start: Date) throws -> Bool {
+        guard let sherpa = Installation.sherpa else {
+            return finish(failed: "the Sherpa 3 module is not installed", start: start)
+        }
+        guard let p = job.hardProcess, p.beams.count == 2, p.beamEnergies.count == 2, !p.finalState.isEmpty else {
+            return finish(failed: "Sherpa computes the process itself and needs its description (beams, energies, final state)",
+                          start: start)
+        }
+        let orders = p.couplingOrders.isEmpty ? "" :
+            "\n    Order: {" + p.couplingOrders.sorted { $0.key < $1.key }.map { "\($0.key): \($0.value)" }.joined(separator: ", ") + "}"
+        let outgoing = p.finalState.map { String($0) }.joined(separator: " ")
+        var card = """
+        BEAMS: [\(p.beams[0]), \(p.beams[1])]
+        BEAM_ENERGIES: [\(p.beamEnergies[0]), \(p.beamEnergies[1])]
+        EVENTS: \(job.events)
+        RANDOM_SEED: \(job.seed % 900_000_000)
+        PROCESSES:
+        - \(p.beams[0]) \(p.beams[1]) -> \(outgoing):\(orders)
+        SHOWER_GENERATOR: \(job.shower ? "CSS" : "None")
+        FRAGMENTATION: \(job.hadronisation ? "Ahadic" : "None")
+        MI_HANDLER: \(job.multipleInteractions ? "Amisic" : "None")
+        HARD_DECAYS: {Enabled: \(job.decays)}
+        EVENT_OUTPUT: HepMC3[\(job.output)]
+        """
+        if let pt = p.minimumPT {
+            card += "\nSELECTORS:\n- [PT, \(p.finalState[0]), \(pt), E_CMS]"
+        }
+        if let extra = job.extraSettings, !extra.isEmpty { card += "\n" + extra }
+        try (card + "\n").write(to: folder.url.appendingPathComponent("Sherpa.yaml"), atomically: true, encoding: .utf8)
+
+        let version = Installation.capabilities(engineVersion: engineVersion).versions["sherpa3"] ?? "Sherpa 3"
+        return try runProcess(sherpa, ["-f", "Sherpa.yaml"], start: start, name: version)
+    }
+
     // MARK: Running a generator
 
     /// Starts a program in the job folder, streams its output into engine.log, and updates the status from the
@@ -214,8 +253,14 @@ struct Runner {
         return false
     }
 
-    /// "Pythia::next(): 1000 events have been generated" / "Herwig: 1000 events".
+    /// "Pythia::next(): 1000 events have been generated" / "Herwig: 1000 events" / Sherpa's
+    /// "XS = 16 pb ... Event 200 ( 0s elapsed / 0s left ) -> ETA: ...", whose other numbers — a cross
+    /// section, a date — must not be mistaken for a count, hence the explicit "Event <n>" first.
     static func eventCount(in line: String) -> Int? {
+        if let r = line.range(of: "Event ") {
+            let digits = line[r.upperBound...].prefix { $0.isNumber }
+            if let n = Int(digits) { return n }
+        }
         guard line.contains("event") else { return nil }
         let numbers = line.split(whereSeparator: { !$0.isNumber }).compactMap { Int($0) }
         return numbers.max()
