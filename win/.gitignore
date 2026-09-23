@@ -2,3 +2,4 @@
 treelevel-mc/bin/
 treelevel-mc/obj/
 backends/pythia/build/
+package/out/

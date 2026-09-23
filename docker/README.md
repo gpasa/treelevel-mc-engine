@@ -51,6 +51,18 @@ docker build -f docker/Dockerfile -t treelevel-mc-engine:dev .
 TREELEVEL_MC_IMAGE=treelevel-mc-engine:dev treelevel-mc capabilities
 ```
 
+**C'est sur macOS que l'image s'éprouve.** Docker y fait tourner des conteneurs arm64 nativement, sans
+virtualisation imbriquée — ce qu'un Windows invité d'un Mac n'a pas et n'aura pas. Une image fraîche se
+vérifie en une commande, avec le travail d'essai que porte le dépôt :
+
+```bash
+cd docker/test-job
+docker run --rm -v "$PWD:/job" ghcr.io/gpasa/treelevel-mc-engine:0.2.0 run /job && cat status.json
+```
+
+Attendu : `state` à `finished`, `eventsWritten` à 200, `crossSection` toujours 3.11399 — le générateur gerbe et
+hadronise, il ne recalcule pas la section efficace.
+
 La variable `TREELEVEL_MC_IMAGE` dit au moteur quelle image utiliser, ce qui sert à essayer une construction
 locale sans toucher à celle qui est publiée.
 
