@@ -82,7 +82,12 @@ RUN wget -q -O sherpa.tar.gz \
 # Pythia 8 and the driver that reads a Les Houches file and writes HepMC3 — the same driver Windows builds
 # with MSVC. It is here so that the image is the whole engine rather than two thirds of it: someone who has
 # Docker installs one thing and has all three generators.
-RUN wget -q -O pythia.tar.gz \
+#
+# rsync is installed here rather than with the rest: Pythia's install target copies with it, and adding it to
+# the first layer would throw away the hour that Herwig and Sherpa took above.
+RUN apt-get update && apt-get install -y --no-install-recommends rsync \
+    && rm -rf /var/lib/apt/lists/* \
+    && wget -q -O pythia.tar.gz \
       "https://gitlab.com/Pythia8/releases/-/archive/pythia${PYTHIA_VERSION}/releases-pythia${PYTHIA_VERSION}.tar.gz" \
     && tar xzf pythia.tar.gz && rm pythia.tar.gz \
     && cd "releases-pythia${PYTHIA_VERSION}" \
