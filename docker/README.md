@@ -108,3 +108,27 @@ faisceaux de hadrons seront au programme.
 **Les arbres de compilation.** Le bootstrap laisse 1,8 Go de sources dépliées et d'objets dans `$PREFIX/src` ;
 ils sont supprimés avant que l'étape finale ne copie quoi que ce soit. La GPL demande que les sources soient
 *disponibles*, non embarquées : elles le restent par ce Dockerfile, par `SOURCES.txt` et par le dépôt.
+
+## Comparer deux générateurs : l'écart est normal
+
+Un même processus ne rend pas la même section efficace d'un générateur à l'autre, et ce n'est pas un défaut.
+Mesuré depuis cette image, e⁻e⁺ → b b̄ à 200 GeV :
+
+| | σ | écart |
+|---|---|---|
+| TreeLevel (arbre), repris tel quel par Herwig et Pythia | 3,1140 pb | — |
+| WHIZARD 3.1.6 | 3,1328 pb | +0,6 % |
+| CalcHEP 3.9.2 | 3,2968 pb | +5,9 % |
+
+L'écart de CalcHEP s'explique **entièrement par le schéma électrofaible**. TreeLevel dérive M_W et sin²θ_W
+de α, G_F et M_Z ; CalcHEP prend sin θ_W et M_W comme entrées indépendantes, à la manière « on-shell ». D'où
+sin²θ_W = 0,23370 chez l'un et 0,22468 chez l'autre, soit 3,9 % de différence. À 200 GeV l'échange du Z
+domine, et le couplage vectoriel de l'électron, g_V = −½ + 2 sin²θ_W, est petit : quelques pour cent sur
+sin²θ_W en déplacent plusieurs sur σ.
+
+La vérification tient en deux passes de CalcHEP ne différant que par ces deux nombres : avec ceux de
+TreeLevel, il rend 3,0715 pb au lieu de 3,2968 — **−6,8 %**, ce qui couvre la totalité de l'écart initial. Ce
+qui subsiste, −1,4 %, tient à la masse courante du quark b, à la largeur du Z et à la valeur exacte de α.
+
+À l'arbre, aucun des deux n'a tort : la différence est un effet d'ordre supérieur, que les corrections
+radiatives resserreraient. Mais qui compare sans le savoir croira à une erreur — d'où ce paragraphe.

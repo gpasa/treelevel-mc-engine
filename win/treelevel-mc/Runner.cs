@@ -269,6 +269,10 @@ public sealed class Runner
         try { if (Directory.Exists(work)) Directory.Delete(work, true); } catch (Exception) { }
         if (!RunProcess(Path.Combine(root, "mkWORKdir"), new[] { work }, start, "CalcHEP",
                         step: "préparation du dossier de travail", finishNow: false)) return false;
+        // A job that was interrupted — a container stopped, a machine switched off — leaves a lock behind,
+        // and every later run in that folder refuses to start. The fresh folder above normally settles it;
+        // this closes the door for the day someone reuses one.
+        try { File.Delete(Path.Combine(work, "lock.batch")); } catch (Exception) { }
 
         var batch = new StringBuilder();
         batch.Append("Model:         SM\nModel changed: False\nGauge:         Feynman\n\n");
