@@ -116,11 +116,13 @@ fi
 cat > "$OUT/release-notes.md" <<NOTES
 # TreeLevel MC Engine $VERSION
 
-Gerbe partonique et hadronisation des événements de TreeLevel, sur votre machine.
+Générateurs Monte-Carlo externes pour TreeLevel, sur votre machine — rien ne sort d'ici.
 
 - Glisser \`TreeLevel MC Engine.app\` dans \`/Applications\`, la lancer une fois.
-- Installer un générateur : \`brew install pythia\` puis \`make -C Backends/pythia install\`, et/ou \`brew install herwig\`.
-- TreeLevel propose alors les générateurs trouvés dans l'espace Génération.
+- Installer au moins un générateur (voir le README) :
+  - **Pythia 8** et **Herwig 7** habillent les événements de TreeLevel : gerbe, hadronisation, désintégrations.
+  - **Sherpa 3**, **WHIZARD 3** et **CalcHEP 3** calculent eux-mêmes le processus décrit par le diagramme.
+- TreeLevel propose alors, dans l'espace Génération, ceux qu'il a trouvés.
 
 Signé et notarisé par Apple. Sommes de contrôle dans \`SHA256SUMS.txt\`.
 NOTES

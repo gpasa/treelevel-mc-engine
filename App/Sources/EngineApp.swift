@@ -63,7 +63,7 @@ final class EngineState: ObservableObject {
     static let shared = EngineState()
     @Published var entries: [JobHistory.Entry] = []
     @Published var capabilities: MCCapabilities?
-    let version = "0.1.1"
+    let version = "0.2.0"
 
 
     func refreshCapabilities() { capabilities = Installation.publishCapabilities(engineVersion: version) }
