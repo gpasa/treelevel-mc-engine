@@ -92,13 +92,15 @@ public sealed class Runner
         return RunProcess(driver, new[] { "--config", "pythia.cmnd", "--out", job.Output }, start, version, environment: environment);
     }
 
-    /// <summary>Herwig 7 inside WSL: written as a <c>.in</c> file, then <c>Herwig read</c> and <c>Herwig run</c>.
-    /// The job folder is reached through its <c>/mnt/…</c> path, so both sides see the same files.</summary>
+    /// <summary>Herwig 7: written as a <c>.in</c> file, then <c>Herwig read</c> and <c>Herwig run</c>. On
+    /// Windows the whole job is handed to the container instead, which runs this very code inside itself; the
+    /// WSL path below is what remains for someone who built Herwig there by hand.</summary>
     bool Herwig(DateTimeOffset start)
     {
-        if (Installation.Wsl == null) return Failed("Herwig 7 runs inside WSL, which is not installed", start);
-        if (Installation.WslPath(folder.Path) is not string inside)
-            return Failed("the job folder is not reachable from WSL", start);
+        if (Installation.Container(engineVersion) is { } container) return InContainer(container, start);
+        if (Installation.Shell == null) return Failed(Missing("Herwig 7"), start);
+        if (Installation.ShellPath(folder.Path) is not string inside)
+            return Failed("the job folder is not reachable from the shell that runs Herwig", start);
         const string name = "job";
         var input = new StringBuilder();
         input.Append("read snippets/EPCollider.in\n");
@@ -135,19 +137,20 @@ public sealed class Runner
 
         string version = Installation.Capabilities(engineVersion).Versions.TryGetValue("herwig7", out var v) ? v : "Herwig 7";
         string quoted = Quote(inside);
-        if (!RunInWsl($"cd {quoted} && Herwig read {name}.in", start, version, step: "lecture de la configuration", finishNow: false)) return false;
-        return RunInWsl($"cd {quoted} && Herwig run {name}.run -N {job.Events}", start, version);
+        if (!RunInShell($"cd {quoted} && Herwig read {name}.in", start, version, step: "lecture de la configuration", finishNow: false)) return false;
+        return RunInShell($"cd {quoted} && Herwig run {name}.run -N {job.Events}", start, version);
     }
 
     /// <summary>Sherpa 3 inside WSL: it has no Les Houches reader, so it is given the process itself, as a YAML
     /// run card. It computes the matrix element (Comix), showers, hadronises and writes the HepMC3 itself.</summary>
     bool Sherpa(DateTimeOffset start)
     {
-        if (Installation.Wsl == null) return Failed("Sherpa 3 runs inside WSL, which is not installed", start);
         if (job.HardProcess is not MCProcess p || p.Beams.Length != 2 || p.BeamEnergies.Length != 2 || p.FinalState.Length == 0)
             return Failed("Sherpa computes the process itself and needs its description (beams, energies, final state)", start);
-        if (Installation.WslPath(folder.Path) is not string inside)
-            return Failed("the job folder is not reachable from WSL", start);
+        if (Installation.Container(engineVersion) is { } container) return InContainer(container, start);
+        if (Installation.Shell == null) return Failed(Missing("Sherpa 3"), start);
+        if (Installation.ShellPath(folder.Path) is not string inside)
+            return Failed("the job folder is not reachable from the shell that runs Sherpa", start);
         string orders = p.CouplingOrders.Count == 0 ? ""
             : "\n    Order: {" + string.Join(", ", p.CouplingOrders.OrderBy(kv => kv.Key, StringComparer.Ordinal).Select(kv => $"{kv.Key}: {kv.Value}")) + "}";
         string outgoing = string.Join(" ", p.FinalState);
@@ -171,7 +174,7 @@ public sealed class Runner
         // Sherpa appends its own extension to EVENT_OUTPUT; the job expects events.hepmc.
         string quoted = Quote(inside);
         string stem = Path.GetFileNameWithoutExtension(job.Output);
-        return RunInWsl($"cd {quoted} && Sherpa -f Sherpa.yaml && (test -f {stem}.hepmc || (test -f {stem}.hepmc3 && mv {stem}.hepmc3 {stem}.hepmc) || (test -f {stem}.hepmc.gz && gunzip -f {stem}.hepmc.gz)) ",
+        return RunInShell($"cd {quoted} && Sherpa -f Sherpa.yaml && (test -f {stem}.hepmc || (test -f {stem}.hepmc3 && mv {stem}.hepmc3 {stem}.hepmc) || (test -f {stem}.hepmc.gz && gunzip -f {stem}.hepmc.gz)) ",
                         start, version);
     }
 
@@ -180,8 +183,51 @@ public sealed class Runner
 
     // Running a program and following it
 
-    bool RunInWsl(string command, DateTimeOffset start, string name, string? step = null, bool finishNow = true)
-        => RunProcess(Installation.Wsl!, new[] { "-e", "bash", "-lc", command }, start, name, step, finishNow, workingDirectory: folder.Path);
+    bool RunInShell(string command, DateTimeOffset start, string name, string? step = null, bool finishNow = true)
+        => RunProcess(Installation.Shell!, Installation.ShellArguments(command), start, name, step, finishNow,
+                      workingDirectory: folder.Path);
+
+    /// <summary>What to say when a generator that only exists on Linux has nowhere to run.</summary>
+    static string Missing(string generator)
+        => Installation.Native
+            ? $"{generator} is not installed in this image"
+            : $"{generator} has no Windows build: it runs in the TreeLevel MC Engine container, which is not installed";
+
+    /// <summary>Herwig and Sherpa on Windows: the job folder is bind-mounted at <c>/job</c> and the engine
+    /// inside the image runs the very same code on it. The container owns the folder while it works — it
+    /// writes status.json, engine.log and the events itself — so nothing here touches them meanwhile.</summary>
+    bool InContainer((string Docker, string Image) container, DateTimeOffset start)
+    {
+        Publish(new MCStatus(MCStatus.State.Running, job.Id)
+        {
+            Number = number, Started = start, Message = "conteneur",
+            GeneratorVersion = MCJob.Label(job.UseGenerator),
+        });
+        // Docker takes the Windows path of the mount, but only with forward slashes.
+        var mount = folder.Path.Replace('\\', '/') + ":/job";
+        var info = new ProcessStartInfo(container.Docker)
+        {
+            WorkingDirectory = folder.Path,
+            RedirectStandardOutput = true, RedirectStandardError = true,
+            UseShellExecute = false, CreateNoWindow = true,
+        };
+        foreach (var a in new[] { "run", "--rm", "-v", mount, container.Image, "run", "/job" })
+            info.ArgumentList.Add(a);
+        using var process = new Process { StartInfo = info };
+        if (!process.Start()) return Failed("cannot start Docker", start);
+        // Read both streams so that the container never blocks on a full pipe; its own log is the one in the
+        // job folder, written from the inside.
+        process.StandardOutput.ReadToEnd();
+        string errors = process.StandardError.ReadToEnd();
+        process.WaitForExit();
+
+        var status = folder.ReadStatus();
+        if (process.ExitCode == 0 && status?.JobState == MCStatus.State.Finished) return true;
+        if (status?.JobState == MCStatus.State.Failed && !string.IsNullOrEmpty(status.Message))
+            return Failed(status.Message, start);
+        var reason = errors.Split('\n').FirstOrDefault(l => l.Trim().Length > 0)?.Trim();
+        return Failed($"the container stopped with code {process.ExitCode}" + (reason == null ? "" : " — " + reason), start);
+    }
 
     bool RunProcess(string exe, string[] arguments, DateTimeOffset start, string name,
                     string? step = null, bool finishNow = true, string? workingDirectory = null,

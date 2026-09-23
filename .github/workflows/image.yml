@@ -1,0 +1,120 @@
+# Builds the container image that carries Herwig 7 and Sherpa 3, for the two architectures TreeLevel runs on,
+# and publishes it as ghcr.io/<owner>/treelevel-mc-engine.
+#
+# Each architecture is built on a runner of that architecture — no emulation: Herwig's bootstrap takes an hour
+# or two natively and the best part of a day under qemu. The two results are then joined into one tag, so that
+# `docker pull` picks the right one by itself.
+
+name: image
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Tag to publish (default: the engine version)"
+        required: false
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE: ${{ github.repository_owner }}/treelevel-mc-engine
+
+jobs:
+  build:
+    name: ${{ matrix.platform }}
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 350
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: linux/amd64
+            runner: ubuntu-24.04
+          - platform: linux/arm64
+            runner: ubuntu-24.04-arm
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: docker/setup-buildx-action@v3
+
+      - uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # Pushed by digest; the tag is put together in the next job, once both architectures are in.
+      - id: build
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: docker/Dockerfile
+          platforms: ${{ matrix.platform }}
+          cache-from: type=gha,scope=${{ matrix.platform }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.platform }}
+          outputs: type=image,name=${{ env.REGISTRY }}/${{ env.IMAGE }},push-by-digest=true,name-canonical=true,push=true
+
+      - name: Keep the digest
+        run: |
+          mkdir -p /tmp/digests
+          touch "/tmp/digests/${{ steps.build.outputs.digest }}"
+        shell: bash
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: digest-${{ strategy.job-index }}
+          path: /tmp/digests/*
+          retention-days: 1
+
+  publish:
+    name: one tag for both
+    runs-on: ubuntu-24.04
+    needs: build
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+        with:
+          path: /tmp/digests
+          pattern: digest-*
+          merge-multiple: true
+
+      - uses: docker/setup-buildx-action@v3
+
+      - uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: The version this image answers to
+        id: version
+        run: |
+          tag="${{ inputs.tag }}"
+          if [ -z "$tag" ]; then tag="${GITHUB_REF_NAME#v}"; fi
+          if [ -z "$tag" ] || [ "$tag" = "$GITHUB_REF_NAME" ]; then
+            # Not a tag push: fall back to the version the engine reports.
+            tag=$(grep -oE '<Version>[^<]+' win/treelevel-mc/treelevel-mc.csproj | head -1 | cut -d'>' -f2)
+          fi
+          echo "tag=${tag:-latest}" >> "$GITHUB_OUTPUT"
+        shell: bash
+
+      - name: Join the two architectures under one tag
+        working-directory: /tmp/digests
+        run: |
+          docker buildx imagetools create \
+            -t "$REGISTRY/$IMAGE:${{ steps.version.outputs.tag }}" \
+            -t "$REGISTRY/$IMAGE:latest" \
+            $(printf "$REGISTRY/$IMAGE@sha256:%s " *)
+        shell: bash
+
+      - name: What was published
+        run: docker buildx imagetools inspect "$REGISTRY/$IMAGE:${{ steps.version.outputs.tag }}"
+        shell: bash

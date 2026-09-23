@@ -2,10 +2,11 @@ using System.Diagnostics;
 
 namespace TreeLevel.MC;
 
-/// <summary>Where the generators are on Windows, and which ones are usable. Three places are looked at, in
-/// order: a module installed beside the engine (what the release archive carries), the usual install folders,
-/// then the PATH. Herwig and Sherpa have no native Windows build; they are looked for inside WSL, which is
-/// how they run here.</summary>
+/// <summary>Where the generators are, and which ones are usable. Three places are looked at, in order: a
+/// module installed beside the engine (what the release archive carries), the usual install folders, then the
+/// PATH. Herwig and Sherpa have no Windows build at all: on Windows they are reached through the container
+/// image, or failing that through WSL, and this same class — running inside that image — finds them sitting
+/// in its own prefix.</summary>
 public static class Installation
 {
     /// <summary>%LocalAppData%\TreeLevel MC Engine — modules, job numbers and the published capabilities.</summary>
@@ -38,8 +39,15 @@ public static class Installation
         return null;
     }
 
+    /// <summary>True when the engine is not the Windows one: inside the container image it runs the
+    /// generators itself, with no WSL and no Docker in between.</summary>
+    public static bool Native => !OperatingSystem.IsWindows();
+
+    /// <summary>The name a program carries on this system: Windows wants the extension, Linux does not.</summary>
+    static string Exe(string name) => OperatingSystem.IsWindows() ? name + ".exe" : name;
+
     /// <summary>The Pythia driver: our own small program, built against the Pythia library.</summary>
-    public static string? PythiaDriver => Find("treelevel-pythia.exe",
+    public static string? PythiaDriver => Find(Exe("treelevel-pythia"),
         Path.Combine(ModulesDirectory, "pythia8"),
         Path.Combine(ModulesDirectory, "pythia8", "bin"));
 
@@ -66,14 +74,15 @@ public static class Installation
         }
     }
 
-    // Herwig and Sherpa through WSL
+    // Herwig and Sherpa: through a shell — our own on Linux, a WSL distribution's on Windows
 
-    /// <summary>WSL, when a distribution is installed. Herwig 7 and Sherpa 3 have no Windows build: they are
-    /// built once inside a distribution and driven from here.</summary>
-    public static string? Wsl
+    /// <summary>The shell the generators are run through: bash here when the engine is the Linux one, and on
+    /// Windows the bash of a WSL distribution, since neither generator has a Windows build.</summary>
+    public static string? Shell
     {
         get
         {
+            if (Native) return File.Exists("/bin/bash") ? "/bin/bash" : null;
             var wsl = Find("wsl.exe");
             if (wsl == null) return null;
             // `wsl -l -q` prints nothing (and fails) when no distribution is installed.
@@ -82,19 +91,72 @@ public static class Installation
         }
     }
 
-    /// <summary>Runs a command inside WSL as a login shell, so that the module's PATH is the one its install set.</summary>
-    public static (int Code, string Output) InWsl(string command)
+    /// <summary>How that shell is asked to run a command — a login shell either way, so that the PATH is the
+    /// one the generators' installation set.</summary>
+    public static string[] ShellArguments(string command)
+        => Native ? new[] { "-lc", command } : new[] { "-e", "bash", "-lc", command };
+
+    /// <summary>Runs a command through that shell and waits for it.</summary>
+    public static (int Code, string Output) InShell(string command)
     {
-        if (Wsl is not string wsl) return (127, "");
-        return Run(wsl, new[] { "-e", "bash", "-lc", command });
+        if (Shell is not string shell) return (127, "");
+        return Run(shell, ShellArguments(command));
     }
 
-    /// <summary>The Linux path a Windows path stands for inside WSL (<c>wslpath</c>).</summary>
-    public static string? WslPath(string windowsPath)
+    /// <summary>The path the generators see for one of ours: the very same one when they run beside us, and
+    /// the one <c>wslpath</c> gives when they run inside a distribution.</summary>
+    public static string? ShellPath(string path)
     {
-        var (code, output) = InWsl($"wslpath -a '{windowsPath.Replace("'", "'\\''")}'");
+        if (Native) return path;
+        var (code, output) = InShell($"wslpath -a '{path.Replace("'", "'\\''")}'");
         var line = output.Trim();
         return code == 0 && line.Length > 0 ? line : null;
+    }
+
+    // Herwig and Sherpa without WSL: the container image, which carries them ready to run
+
+    /// <summary>The image that carries Herwig and Sherpa. TREELEVEL_MC_IMAGE overrides it, for a local build
+    /// or a mirror.</summary>
+    public static string Image(string engineVersion)
+        => Environment.GetEnvironmentVariable("TREELEVEL_MC_IMAGE") is string set && set.Trim().Length > 0
+            ? set.Trim() : "ghcr.io/gpasa/treelevel-mc-engine:" + engineVersion;
+
+    /// <summary>Docker, but only when its daemon answers: Docker Desktop installs the client long before the
+    /// engine can run, and on a machine without virtualisation it never will.</summary>
+    public static string? Docker
+    {
+        get
+        {
+            var docker = Find(Exe("docker"),
+                Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles),
+                             "Docker", "Docker", "resources", "bin"));
+            if (docker == null) return null;
+            var (code, output) = Run(docker, new[] { "version", "--format", "{{.Server.Version}}" });
+            return code == 0 && output.Trim().Length > 0 ? docker : null;
+        }
+    }
+
+    /// <summary>Whether the image is already on the machine. Nothing is ever pulled behind the user's back:
+    /// TreeLevel offers the download, which is a visible act with a size attached to it.</summary>
+    public static bool ImageIsPresent(string docker, string image)
+        => Run(docker, new[] { "image", "inspect", image }).Code == 0;
+
+    /// <summary>Docker and the image together, when both are there: this is how Herwig and Sherpa run on
+    /// Windows, and it is preferred over WSL when the two are available.</summary>
+    public static (string Docker, string Image)? Container(string engineVersion)
+    {
+        if (Native || Docker is not string docker) return null;
+        var image = Image(engineVersion);
+        return ImageIsPresent(docker, image) ? (docker, image) : null;
+    }
+
+    /// <summary>What the engine inside the image reports, asked for by running it.</summary>
+    static MCCapabilities? ImageCapabilities(string docker, string image)
+    {
+        var (code, output) = Run(docker, new[] { "run", "--rm", image, "capabilities" });
+        if (code != 0) return null;
+        try { return System.Text.Json.JsonSerializer.Deserialize<MCCapabilities>(output, MCEngineProtocol.JsonOptions); }
+        catch (Exception) { return null; }
     }
 
     static (int Code, string Output) Run(string exe, string[] arguments, bool unicode = false)
@@ -127,9 +189,9 @@ public static class Installation
         return code == 0 && !string.IsNullOrEmpty(line) ? line : null;
     }
 
-    static string? WslVersionOf(string command)
+    static string? ShellVersionOf(string command)
     {
-        var (code, output) = InWsl(command);
+        var (code, output) = InShell(command);
         var line = output.Split('\n').FirstOrDefault(l => l.Trim().Length > 0)?.Trim();
         return code == 0 && !string.IsNullOrEmpty(line) ? line : null;
     }
@@ -154,18 +216,34 @@ public static class Installation
             caps.Generators.Add(MCJob.Generator.Pythia8);
             caps.Versions[MCJob.RawValue(MCJob.Generator.Pythia8)] = "Pythia " + pythia;
         }
-        if (Wsl != null)
+        // The image first: on Windows it is the supported way to reach Herwig and Sherpa, and it answers for
+        // itself. Nothing is downloaded here — an image that is not on the machine simply offers nothing.
+        if (!Native && Docker is string docker && ImageIsPresent(docker, Image(engineVersion))
+            && ImageCapabilities(docker, Image(engineVersion)) is MCCapabilities image)
+        {
+            foreach (var generator in image.Generators)
+            {
+                if (generator == MCJob.Generator.Passthrough || caps.Generators.Contains(generator)) continue;
+                caps.Generators.Add(generator);
+                string key = MCJob.RawValue(generator);
+                caps.Versions[key] = (image.Versions.TryGetValue(key, out var v) ? v : MCJob.Label(generator)) + " (Docker)";
+            }
+        }
+        if (Shell != null)
         {
             // A broken installation (a missing library after a distribution upgrade, say) must not be offered.
-            if (WslVersionOf("Herwig --version 2>/dev/null") is string herwig && herwig.ToLowerInvariant().Contains("herwig"))
+            string where = Native ? "" : " (WSL)";
+            if (!caps.Generators.Contains(MCJob.Generator.Herwig7)
+                && ShellVersionOf("Herwig --version 2>/dev/null") is string herwig && herwig.ToLowerInvariant().Contains("herwig"))
             {
                 caps.Generators.Add(MCJob.Generator.Herwig7);
-                caps.Versions[MCJob.RawValue(MCJob.Generator.Herwig7)] = herwig + " (WSL)";
+                caps.Versions[MCJob.RawValue(MCJob.Generator.Herwig7)] = herwig + where;
             }
-            if (WslVersionOf("Sherpa --version 2>/dev/null | head -1") is string sherpa && sherpa.ToLowerInvariant().Contains("sherpa"))
+            if (!caps.Generators.Contains(MCJob.Generator.Sherpa3)
+                && ShellVersionOf("Sherpa --version 2>/dev/null | head -1") is string sherpa && sherpa.ToLowerInvariant().Contains("sherpa"))
             {
                 caps.Generators.Add(MCJob.Generator.Sherpa3);
-                caps.Versions[MCJob.RawValue(MCJob.Generator.Sherpa3)] = sherpa + " (WSL)";
+                caps.Versions[MCJob.RawValue(MCJob.Generator.Sherpa3)] = sherpa + where;
             }
         }
         return caps;

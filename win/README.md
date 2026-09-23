@@ -16,12 +16,13 @@ treelevel-mc version
 |---|---|
 | Sans gerbe (`passthrough`) | intégré au moteur, rien à installer |
 | Pythia 8 | natif, MSVC — `backends/pythia` construit le pilote et son module |
-| Herwig 7 | dans WSL : aucune version Windows n'existe |
-| Sherpa 3 | dans WSL, pour la même raison |
+| Herwig 7 | dans le conteneur : aucune version Windows n'existe |
+| Sherpa 3 | dans le conteneur, pour la même raison |
 | WHIZARD, CalcHEP | pas encore portés |
 
 Pythia, Herwig et Sherpa sont sous **GPL** : ce dépôt est GPL v3, et aucun de leurs fichiers n'y est recopié.
-C'est vous qui les téléchargez et les construisez, avec les scripts ci-dessous.
+Vous construisez Pythia avec le script ci-dessous ; Herwig et Sherpa arrivent construits dans l'image, dont la
+recette et les sources sont publiées avec elle.
 
 ## Construire le moteur
 
@@ -70,52 +71,54 @@ Les 107 unités de compilation de Pythia prennent quelques minutes la première 
 treelevel-mc capabilities     # pythia8 doit apparaître, avec sa version
 ```
 
-## Herwig 7 et Sherpa 3 dans WSL
+## Herwig 7 et Sherpa 3 : le conteneur
 
-Aucun des deux ne se construit avec MSVC. Ils tournent dans une distribution WSL et le moteur les pilote
-depuis Windows : il traduit le dossier de travail avec `wslpath`, lance `Herwig read` puis `Herwig run`, ou
-`Sherpa -f`, et relit le HepMC3 produit là où Windows le voit. Aucune copie, le dossier est le même.
-
-Le moteur ne les propose que s'ils répondent vraiment : `capabilities` interroge `Herwig --version` et
-`Sherpa --version` à chaque appel, et une installation cassée — une bibliothèque disparue après une mise à
-jour de la distribution, par exemple — disparaît de la liste au lieu d'échouer au milieu d'un travail.
+Aucun des deux n'a de version Windows, et ce n'est pas une affaire de drapeaux de compilation : Sherpa charge
+ses modules avec `dlopen` et s'appuie sur `sys/resource.h`, Herwig repose sur le dépôt de classes chargées à
+l'exécution de ThePEG, sur autotools et sur du Fortran. Les porter, ce serait maintenir un fork de code GPL
+amont. Ils tournent donc dans un conteneur Linux, que l'utilisateur récupère d'une commande :
 
 ```powershell
-wsl --install -d Ubuntu      # redémarrage, puis un compte à créer dans la distribution
+docker pull ghcr.io/gpasa/treelevel-mc-engine:0.2.0
 ```
 
-Ensuite, dans Ubuntu. Les contournements que macOS impose (gcc plutôt que clang, `_Static_assert`,
-`-fno-range-check`) n'ont pas lieu d'être ici : gcc est le compilateur du système.
+Le moteur qui tourne dans l'image est **le même programme** que celui de Windows, compilé pour Linux : il lit
+le même `job.json` et écrit le même `status.json`. Le dossier de travail est monté tel quel, donc rien n'est
+copié ni converti — voir [`docker/README.md`](../docker/README.md) pour ce que l'image contient et d'où
+viennent ses sources.
+
+Côté Windows, le moteur s'en occupe seul : il vérifie que le démon Docker répond, que l'image est **déjà**
+présente (`docker image inspect` — rien n'est jamais téléchargé sans qu'on le demande), puis lance
+
+```
+docker run --rm -v "<dossier de travail>:/job" <image> run /job
+```
+
+et laisse le conteneur écrire lui-même sa progression. Si Docker n'est pas là, les deux générateurs ne sont pas
+proposés, et un travail qui les demande échoue tout de suite avec la raison.
+
+> **Machines virtuelles.** Docker Desktop fait tourner son moteur dans WSL2, c'est-à-dire dans une machine
+> virtuelle Hyper-V. Sur un PC réel la virtualisation est active d'origine ; dans un invité Windows, il faut
+> que l'hôte expose la **virtualisation imbriquée** — sur un Mac, une puce M3 ou M4 avec Parallels 19+.
+> Sans elle, Docker s'installe mais son moteur ne démarre pas. Pythia, lui, tourne partout.
+
+### Le repli : WSL à la main
+
+Pour qui a déjà construit Herwig ou Sherpa dans sa distribution, le moteur les y trouve encore. Il interroge
+`Herwig --version` et `Sherpa --version` à chaque appel de `capabilities`, et une installation cassée disparaît
+de la liste au lieu d'échouer au milieu d'un travail.
 
 ```bash
-# Herwig 7 — le bootstrap officiel construit toute la pile (ThePEG, FastJet, LHAPDF, HepMC3).
-sudo apt update && sudo apt install -y build-essential gfortran autoconf automake libtool \
-     python3-dev zlib1g-dev libboost-dev libgsl-dev wget
-wget https://herwig.hepforge.org/downloads/herwig-bootstrap
-chmod +x herwig-bootstrap
+# dans Ubuntu ; les contournements imposés par macOS (gcc plutôt que clang, _Static_assert, -fno-range-check)
+# n'ont pas lieu d'être ici, gcc est le compilateur du système
+sudo apt install -y build-essential gfortran autoconf automake libtool python3-dev zlib1g-dev libboost-dev libgsl-dev
+wget https://herwig.hepforge.org/downloads/herwig-bootstrap && chmod +x herwig-bootstrap
 ./herwig-bootstrap --lite -j $(nproc) ~/herwig7        # une à deux heures
 echo 'source ~/herwig7/bin/activate' >> ~/.bashrc
-
-# Sherpa 3 — CMake, en réutilisant les dépendances du préfixe de Herwig.
-sudo apt install -y cmake libsqlite3-dev
-cmake -S sherpa-3.0.5 -B build -DCMAKE_INSTALL_PREFIX=$HOME/sherpa3 \
-      -DSHERPA_ENABLE_LHAPDF=ON  -DLHAPDF_DIR=$HOME/herwig7 \
-      -DSHERPA_ENABLE_HEPMC3=ON  -DHepMC3_DIR=$HOME/herwig7 \
-      -DSHERPA_ENABLE_FASTJET=ON -DFASTJET_DIR=$HOME/herwig7
-cmake --build build -j $(nproc) && cmake --install build
-echo 'export PATH=$HOME/sherpa3/bin:$PATH' >> ~/.bashrc
 ```
 
-Le moteur lance ses commandes avec `bash -lc`, donc le `PATH` que ces deux lignes posent est celui qu'il voit.
-
-```powershell
-treelevel-mc capabilities     # herwig7 et sherpa3 doivent apparaître, suivis de « (WSL) »
-```
-
-> Ces deux chemins sont écrits mais **pas encore éprouvés** : WSL n'est pas installé sur la machine de
-> développement. Le code de repli, lui, l'est — sans distribution, les deux générateurs ne sont pas proposés
-> et un travail qui les demande échoue tout de suite avec « Herwig 7 runs inside WSL, which is not installed »
-> plutôt qu'à mi-parcours.
+Le moteur lance ses commandes avec `bash -lc`, donc le `PATH` que cette ligne pose est celui qu'il voit. C'est
+exactement la recette de l'image, en plus long — d'où l'image.
 
 ## Différences avec macOS
 
@@ -124,7 +127,8 @@ treelevel-mc capabilities     # herwig7 et sherpa3 doivent apparaître, suivis d
 * Le moteur est écrit en C# plutôt qu'en Swift ; le protocole, lui, est le même fichier de part et d'autre
   (`MCEngineProtocol.cs` ↔ `Protocol/MCEngineProtocol.swift`), y compris la forme exacte du JSON que
   `Codable` produit : clés en camel, énumérations en minuscules, dates en secondes depuis le 1er janvier 2001.
-* Herwig et Sherpa passent par WSL au lieu de tourner nativement.
+* Herwig et Sherpa tournent dans un conteneur Linux au lieu de tourner nativement ; c'est le même moteur
+  qui s'exécute dedans, compilé pour Linux.
 
 ## Mesuré
 
