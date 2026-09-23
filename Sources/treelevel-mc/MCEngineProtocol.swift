@@ -53,7 +53,7 @@ public enum MCEngineProtocol {
 /// What to run on the parton-level events.
 public struct MCJob: Codable, Equatable {
     public enum Generator: String, Codable, CaseIterable {
-        case pythia8, herwig7, sherpa3
+        case pythia8, herwig7, sherpa3, whizard3, calchep3
         /// No shower: the events are copied through, to check the plumbing.
         case passthrough
         public var label: String {
@@ -61,16 +61,18 @@ public struct MCJob: Codable, Equatable {
             case .pythia8: return "Pythia 8"
             case .herwig7: return "Herwig 7"
             case .sherpa3: return "Sherpa 3"
+            case .whizard3: return "WHIZARD 3"
+            case .calchep3: return "CalcHEP 3"
             case .passthrough: return "sans gerbe"
             }
         }
         /// Whether the generator starts from the events TreeLevel wrote, or computes the process itself.
-        /// Sherpa has no Les Houches reader — it only writes that format — so it belongs to the second
-        /// family, with the matrix-element generators.
+        /// Sherpa has no Les Houches reader — it only writes that format — and WHIZARD and CalcHEP are
+        /// matrix-element generators to begin with, so all three belong to the second family.
         public var readsLesHouches: Bool {
             switch self {
             case .pythia8, .herwig7, .passthrough: return true
-            case .sherpa3: return false
+            case .sherpa3, .whizard3, .calchep3: return false
             }
         }
     }
@@ -83,7 +85,8 @@ public struct MCJob: Codable, Equatable {
     /// Number of events in the input file; the engine may write fewer if a shower fails.
     public var events: Int
     public var seed: Int
-    /// Parton shower (initial and final state radiation).
+    /// Parton shower (initial and final state radiation). Ignored by a generator that only computes the
+    /// hard process: CalcHEP stops at parton level and says so.
     public var shower = true
     /// Hadronisation (string or cluster model).
     public var hadronisation = true

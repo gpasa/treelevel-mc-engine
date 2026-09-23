@@ -47,6 +47,31 @@ enum Installation {
         return candidates.first { FileManager.default.isExecutableFile(atPath: $0.path) }
     }
 
+    /// WHIZARD's command line. Like Sherpa it computes its own matrix elements — through O'Mega, which
+    /// generates and compiles Fortran for each new process.
+    static var whizard: URL? {
+        let candidates = [modulesDirectory.appendingPathComponent("whizard3/bin/whizard"),
+                          URL(fileURLWithPath: "/opt/local/bin/whizard"),                // MacPorts
+                          URL(fileURLWithPath: "/usr/local/bin/whizard"),
+                          URL(fileURLWithPath: "/opt/homebrew/bin/whizard")]
+        return candidates.first { FileManager.default.isExecutableFile(atPath: $0.path) }
+    }
+
+    /// CalcHEP's tree. It is not a single program: a job runs in a working copy made by `mkWORKdir`,
+    /// so what we look for is the root, and the version is the one its headers carry.
+    static var calchep: URL? {
+        let candidates = [modulesDirectory.appendingPathComponent("calchep3"),
+                          URL(fileURLWithPath: "/opt/local/share/calchep"),
+                          URL(fileURLWithPath: NSHomeDirectory()).appendingPathComponent("calchep")]
+        return candidates.first { FileManager.default.isExecutableFile(atPath: $0.appendingPathComponent("mkWORKdir").path) }
+    }
+
+    static func calchepVersion(_ root: URL) -> String? {
+        guard let header = try? String(contentsOf: root.appendingPathComponent("include/version.h"), encoding: .utf8),
+              let quoted = header.split(separator: "\"").dropFirst().first else { return nil }
+        return "CalcHEP " + quoted
+    }
+
     static func capabilities(engineVersion: String) -> MCCapabilities {
         var generators: [MCJob.Generator] = [.passthrough]
         var versions: [String: String] = [:]
@@ -64,6 +89,17 @@ enum Installation {
            !v.contains("dyld"), !v.contains("not loaded"), v.lowercased().contains("sherpa") {
             generators.append(.sherpa3)
             versions[MCJob.Generator.sherpa3.rawValue] = String(v).trimmingCharacters(in: .whitespaces)
+        }
+        // WHIZARD prints its banner on --version and returns 0; the version is on the first line.
+        if let whizard, let v = Process.output(whizard, ["--version"])?.split(separator: "\n")
+                                       .first(where: { $0.lowercased().contains("whizard") }),
+           !v.contains("dyld"), !v.contains("not loaded") {
+            generators.append(.whizard3)
+            versions[MCJob.Generator.whizard3.rawValue] = String(v).trimmingCharacters(in: .whitespaces)
+        }
+        if let calchep, let v = calchepVersion(calchep) {
+            generators.append(.calchep3)
+            versions[MCJob.Generator.calchep3.rawValue] = v
         }
         var caps = MCCapabilities(engineVersion: engineVersion, generators: generators)
         caps.versions = versions

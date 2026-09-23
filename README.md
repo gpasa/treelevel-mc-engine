@@ -122,6 +122,68 @@ retoucher.
 Mesuré sur un e⁻e⁺ → W⁺W⁻ à 200 GeV, 10 000 événements partoniques écrits par TreeLevel : **12,2 s** de
 cascade et d'hadronisation (Pythia 8 : 6,4 s).
 
+## Construire les modules Sherpa, WHIZARD et CalcHEP
+
+Tous avec le même gcc 15 de MacPorts que Herwig — les ABI C++ doivent s'accorder — et en réutilisant les
+HepMC3, LHAPDF et FastJet installés dans le préfixe `herwig7`.
+
+```bash
+export PATH=/opt/local/bin:/usr/bin:/bin
+export CC=/opt/local/bin/gcc-mp-15 CXX=/opt/local/bin/g++-mp-15 FC=/opt/local/bin/gfortran-mp-15
+DEPS=~/Library/TreeLevelMC/herwig7
+
+# Sherpa 3.0.5 — CMake. `_Static_assert` est un mot-clé du C que clang accepte aussi en C++ et
+# que gcc refuse ; mach/port.h s'en sert, et ATOOLS/Org/RUsage.C inclut mach/mach.h.
+cmake -S . -B build -DCMAKE_INSTALL_PREFIX=~/Library/TreeLevelMC/sherpa3 \
+  -DCMAKE_CXX_FLAGS="-D_Static_assert=static_assert" \
+  -DSHERPA_ENABLE_LHAPDF=ON -DLHAPDF_DIR=$DEPS \
+  -DSHERPA_ENABLE_HEPMC3=ON -DHepMC3_DIR=$DEPS \
+  -DSHERPA_ENABLE_FASTJET=ON -DFASTJET_DIR=$DEPS
+cmake --build build -j 12 && cmake --install build
+
+# WHIZARD 3.1.6 — autotools, OCaml de MacPorts pour O'Mega. mcfio/StdHEP mélange long et int32_t
+# dans ses appels XDR, ce dont gcc 15 fait des erreurs.
+export CFLAGS="-O2 -std=gnu17 -Wno-incompatible-pointer-types -Wno-implicit-function-declaration -Wno-int-conversion"
+./configure --prefix=~/Library/TreeLevelMC/whizard3 --with-hepmc=$DEPS --with-lhapdf=$DEPS \
+            --with-fastjet=$DEPS --disable-latex && make -j 12 && make install
+
+# CalcHEP 3.9.2 — un simple make, mais il faut le construire là où il vivra : ses bibliothèques
+# portent leur chemin absolu.
+make
+```
+
+Puis un lien depuis le dossier de modules, comme pour Herwig :
+
+```bash
+cd ~/Library/Application\ Support/TreeLevel\ MC\ Engine/Modules
+ln -s ~/Library/TreeLevelMC/sherpa3 ~/Library/TreeLevelMC/whizard3 ~/Library/TreeLevelMC/calchep3 .
+```
+
+### Ce que chacun attend
+
+Sherpa, WHIZARD et CalcHEP n'ont pas de lecteur Les Houches : on leur décrit le processus (`MCProcess`
+du protocole) et ils calculent tout eux-mêmes. Trois détails appris à leurs dépens :
+
+- **Sherpa** écrit son HepMC3 dans le fichier dont on lui donne le nom de base, et sa section efficace dans
+  la ligne `C` du format Asciiv3.
+- **WHIZARD** refuse `?ps_isr_active` ailleurs que sur une collision hadronique, et n'écrit aucune section
+  efficace dans son HepMC3 : elle se lit dans la dernière ligne de sa table d'intégration, en femtobarns.
+  Le rayonnement QED d'un faisceau leptonique est `?isr_active`, laissé éteint — il déplacerait σ.
+- **CalcHEP** s'arrête au niveau partonique : ni gerbe ni hadronisation. Un travail tourne dans une copie
+  de son arbre faite par `mkWORKdir`, et ses événements Les Houches gzippés sont convertis en HepMC3 par
+  le même code que le passe-plat.
+
+### Mesuré : e⁻e⁺ → W⁺W⁻ à 200 GeV
+
+| moteur | σ | remarque |
+|---|---|---|
+| TreeLevel | 19,22 pb | à l'arbre, M_W imposée par G_F |
+| WHIZARD 3.1.6 | 19,441 ± 0,006 pb | O'Mega, schéma propre |
+| CalcHEP 3.9.2 | 20,42 pb | autre schéma de couplages |
+| Sherpa 3.0.5 | 18,2 ± 1,1 pb | rayonnement initial QED activé par défaut |
+
+Les écarts sont des choix de schéma, pas des erreurs : le couplage entre à la puissance quatre.
+
 ## Publier une version
 
 Tout se passe sur la machine du développeur : la clé Developer ID ne quitte pas le trousseau, rien n'est confié

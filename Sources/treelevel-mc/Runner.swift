@@ -33,6 +33,8 @@ struct Runner {
             case .pythia8: return try pythia(start: start)
             case .herwig7: return try herwig(start: start)
             case .sherpa3: return try sherpa(start: start)
+            case .whizard3: return try whizard(start: start)
+            case .calchep3: return try calchep(start: start)
             }
         } catch {
             return finish(failed: error.localizedDescription, start: start)
@@ -168,16 +170,151 @@ struct Runner {
         return try runProcess(sherpa, ["-f", "Sherpa.yaml"], start: start, name: version)
     }
 
+    /// WHIZARD 3: a Sindarin script. O'Mega writes the matrix element in Fortran and compiles it on the
+    /// spot, so the first run of a new process pays a few seconds of compiler before generating anything.
+    private func whizard(start: Date) throws -> Bool {
+        guard let whizard = Installation.whizard else {
+            return finish(failed: "the WHIZARD 3 module is not installed", start: start)
+        }
+        guard let p = job.hardProcess, p.beams.count == 2, !p.finalState.isEmpty else {
+            return finish(failed: "WHIZARD computes the process itself and needs its description (beams, energies, final state)",
+                          start: start)
+        }
+        let all = p.beams + p.finalState
+        guard let names = try? all.map({ code -> String in
+            guard let name = Sindarin.name(of: code) else { throw Failure("WHIZARD does not know the particle \(code)") }
+            return name
+        }) else {
+            return finish(failed: "WHIZARD does not know one of the particles of this process", start: start)
+        }
+        let sample = (job.output as NSString).deletingPathExtension     // it appends the format's extension
+        // Initial-state radiation off the shower is WHIZARD's hadron-collision setting, and it refuses it
+        // outright on a lepton machine; the QED radiation of a lepton beam is `?isr_active`, a different
+        // thing, left to whoever asks for it in the extra settings — it would move the cross section.
+        let hadronBeams = p.beams.allSatisfy { abs($0) > 100 }
+        let script = """
+        model = SM
+        process job = \(names[0]), \(names[1]) => \(names.dropFirst(2).joined(separator: ", "))
+        sqrts = \(p.centreOfMassEnergy) GeV
+        seed = \(job.seed % 900_000_000)
+        \(p.minimumPT.map { "cuts = all Pt > \($0) GeV [final]" } ?? "")
+        ?ps_fsr_active = \(job.shower)
+        ?ps_isr_active = \(job.shower && hadronBeams)
+        ?hadronization_active = \(job.hadronisation)
+        $hadronization_method = "PYTHIA6"
+        n_events = \(job.events)
+        $sample = "\(sample)"
+        sample_format = hepmc
+        \(job.extraSettings ?? "")
+        simulate (job)
+        """
+        try (script + "\n").write(to: folder.url.appendingPathComponent("job.sin"), atomically: true, encoding: .utf8)
+
+        let version = Installation.capabilities(engineVersion: engineVersion).versions["whizard3"] ?? "WHIZARD 3"
+        return try runProcess(whizard, ["job.sin"], start: start, name: version, crossSection: Self.whizardCrossSection)
+    }
+
+    /// WHIZARD writes no cross section into its HepMC3, so it is read from the last line of its integration
+    /// table — the combined result, in femtobarns.
+    ///   "   6      29826  1.9440903E+04  6.30E+00    0.03    0.06   47.83    1.13   3"
+    static func whizardCrossSection(in log: String) -> (Double, Double)? {
+        var result: (Double, Double)?
+        for line in log.split(separator: "\n") {
+            let f = line.split(separator: " ").map(String.init)
+            guard f.count >= 4, Int(f[0]) != nil, Int(f[1]) != nil,
+                  let value = Double(f[2]), let error = Double(f[3]),
+                  f[2].contains("E"), value > 0 else { continue }
+            result = (value / 1000, error / 1000)                       // fb → pb, as everywhere else here
+        }
+        return result
+    }
+
+    /// CalcHEP 3: it computes the hard process and stops there — no shower, no hadronisation. A job runs
+    /// in a working copy of its tree, made by `mkWORKdir`, and leaves Les Houches events behind, which we
+    /// turn into HepMC3 exactly as the passthrough backend does.
+    private func calchep(start: Date) throws -> Bool {
+        guard let root = Installation.calchep else {
+            return finish(failed: "the CalcHEP 3 module is not installed", start: start)
+        }
+        guard let p = job.hardProcess, p.beams.count == 2, !p.finalState.isEmpty else {
+            return finish(failed: "CalcHEP computes the process itself and needs its description (beams, energies, final state)",
+                          start: start)
+        }
+        let all = p.beams + p.finalState
+        let names = all.map { CalcHEPNames.name(of: $0) }
+        guard !names.contains(nil) else {
+            return finish(failed: "CalcHEP does not know one of the particles of this process", start: start)
+        }
+        let incoming = names[0..<2].map { $0! }.joined(separator: ",")
+        let outgoing = names[2...].map { $0! }.joined(separator: ",")
+
+        let work = folder.url.appendingPathComponent("calchep", isDirectory: true)
+        try? FileManager.default.removeItem(at: work)
+        guard try runProcess(root.appendingPathComponent("mkWORKdir"), [work.path], start: start,
+                             name: "CalcHEP", step: "préparation du dossier de travail", finishNow: false) else { return false }
+
+        let batch = """
+        Model:         SM
+        Model changed: False
+        Gauge:         Feynman
+
+        Process:   \(incoming)->\(outgoing)
+
+        p1:        \(p.beamEnergies[0])
+        p2:        \(p.beamEnergies[1])
+        \(p.minimumPT.map { "Cut parameter:    T(\(names[2]!))\nCut invert:       False\nCut min:          \($0)\nCut max:" } ?? "")
+        \(job.extraSettings ?? "")
+        Number of events (per run step):  \(job.events)
+        Filename:                         events
+        NTuple:                           False
+        Cleanup:                          False
+        Parallelization method:           local
+        Max number of nodes:              4
+        Max number of processes per node: 1
+        """
+        try (batch + "\n").write(to: work.appendingPathComponent("batch_file"), atomically: true, encoding: .utf8)
+
+        let version = Installation.calchepVersion(root) ?? "CalcHEP 3"
+        guard try runProcess(work.appendingPathComponent("calchep_batch"), ["batch_file"], start: start,
+                             name: version, workingDirectory: work, finishNow: false) else { return false }
+
+        // CalcHEP gzips its Les Houches file; unpack it, then convert as the passthrough backend does.
+        let packed = work.appendingPathComponent("batch_results/events-single.lhe.gz")
+        guard FileManager.default.fileExists(atPath: packed.path) else {
+            return finish(failed: "\(version) wrote no event file — see engine.log", start: start)
+        }
+        let lhe = folder.url.appendingPathComponent("events.lhe")
+        guard try runProcess(URL(fileURLWithPath: "/usr/bin/gunzip"), ["-c", packed.path], start: start,
+                             name: version, step: "lecture des événements", finishNow: false,
+                             standardOutput: lhe) else { return false }
+        let events = try LesHouchesLite.read(lhe)
+        try LesHouchesLite.writeHepMC(events, to: folder.outputURL(job), crossSection: events.crossSection)
+
+        var done = MCStatus(state: .finished, jobID: job.id)
+        done.number = number
+        done.started = start
+        done.finished = Date()
+        done.eventsWritten = events.events.count
+        done.crossSection = events.crossSection
+        done.generatorVersion = version + " (niveau partonique)"
+        done.progress = 1
+        done.seconds = Date().timeIntervalSince(start)
+        publish(done)
+        return true
+    }
+
     // MARK: Running a generator
 
     /// Starts a program in the job folder, streams its output into engine.log, and updates the status from the
     /// lines that mention a number of events.
     private func runProcess(_ url: URL, _ arguments: [String], start: Date, name: String,
-                            step: String? = nil, finishNow: Bool = true) throws -> Bool {
+                            step: String? = nil, workingDirectory: URL? = nil, finishNow: Bool = true,
+                            crossSection: ((String) -> (Double, Double)?)? = nil,
+                            standardOutput: URL? = nil) throws -> Bool {
         let process = Process()
         process.executableURL = url
         process.arguments = arguments
-        process.currentDirectoryURL = folder.url
+        process.currentDirectoryURL = workingDirectory ?? folder.url
         var environment = ProcessInfo.processInfo.environment
         environment["TREELEVEL_JOB"] = job.id
         // A module's plugins ask for @rpath/libHepMC3, and the rpath they were linked with is the build
@@ -190,7 +327,13 @@ struct Runner {
         }
         process.environment = environment
         let pipe = Pipe()
-        process.standardOutput = pipe
+        // Only a program whose output *is* the result writes elsewhere than the log (gunzip, here).
+        if let standardOutput {
+            FileManager.default.createFile(atPath: standardOutput.path, contents: nil)
+            process.standardOutput = try FileHandle(forWritingTo: standardOutput)
+        } else {
+            process.standardOutput = pipe
+        }
         process.standardError = pipe
         FileManager.default.createFile(atPath: folder.logURL.path, contents: nil)
         let log = try FileHandle(forWritingTo: folder.logURL)
@@ -237,6 +380,13 @@ struct Runner {
         done.seconds = Date().timeIntervalSince(start)
         done.crossSection = sigma
         done.crossSectionError = sigmaError
+        // Not every generator writes its cross section into the events; some only print it.
+        if done.crossSection == nil, let crossSection,
+           let text = try? String(contentsOf: folder.logURL, encoding: .utf8),
+           let (value, error) = crossSection(text) {
+            done.crossSection = value
+            done.crossSectionError = error
+        }
         publish(done)
         return true
     }
@@ -288,5 +438,35 @@ struct Runner {
             }
         }
         return (events, sigma, sigmaError)
+    }
+}
+
+
+/// WHIZARD's own particle names, as its Standard Model calls them.
+enum Sindarin {
+    private static let names: [Int: (String, String)] = [       // (particle, antiparticle)
+        1: ("d", "D"), 2: ("u", "U"), 3: ("s", "S"), 4: ("c", "C"), 5: ("b", "B"), 6: ("t", "T"),
+        11: ("e1", "E1"), 12: ("n1", "N1"), 13: ("e2", "E2"), 14: ("n2", "N2"), 15: ("e3", "E3"), 16: ("n3", "N3"),
+        21: ("gl", "gl"), 22: ("A", "A"), 23: ("Z", "Z"), 24: ("Wp", "Wm"), 25: ("H", "H"),
+    ]
+    static func name(of code: Int) -> String? {
+        guard let pair = names[abs(code)] else { return nil }
+        return code >= 0 ? pair.0 : pair.1
+    }
+}
+
+struct Failure: Error { let message: String; init(_ m: String) { message = m } }
+
+
+/// CalcHEP's own particle names, as its Standard Model calls them.
+enum CalcHEPNames {
+    private static let names: [Int: (String, String)] = [       // (particle, antiparticle)
+        1: ("d", "D"), 2: ("u", "U"), 3: ("s", "S"), 4: ("c", "C"), 5: ("b", "B"), 6: ("t", "T"),
+        11: ("e", "E"), 12: ("ne", "Ne"), 13: ("m", "M"), 14: ("nm", "Nm"), 15: ("l", "L"), 16: ("nl", "Nl"),
+        21: ("G", "G"), 22: ("A", "A"), 23: ("Z", "Z"), 24: ("W+", "W-"), 25: ("h", "h"),
+    ]
+    static func name(of code: Int) -> String? {
+        guard let pair = names[abs(code)] else { return nil }
+        return code >= 0 ? pair.0 : pair.1
     }
 }
