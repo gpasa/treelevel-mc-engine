@@ -78,6 +78,45 @@ public static class Installation
         }
     }
 
+    /// <summary>WHIZARD, which computes its own matrix elements. It exists only where a shell can reach it —
+    /// in the image, or in a WSL distribution.</summary>
+    public static string? Whizard => Find(Exe("whizard"),
+        Path.Combine(ModulesDirectory, "whizard3", "bin"),
+        "/opt/treelevel-mc/bin");
+
+    /// <summary>CalcHEP's tree, not a program: its scripts carry the absolute path of the place they were
+    /// built in, so the folder is what matters.</summary>
+    public static string? Calchep
+    {
+        get
+        {
+            var candidates = new[]
+            {
+                Path.Combine(ModulesDirectory, "calchep3"),
+                "/opt/treelevel-mc/calchep",
+                Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), "calchep"),
+            };
+            foreach (var c in candidates)
+            {
+                try { if (File.Exists(Path.Combine(c, "calchep_batch"))) return Path.GetFullPath(c); }
+                catch (Exception) { }
+            }
+            return null;
+        }
+    }
+
+    /// <summary>CalcHEP answers no --version; it carries its own in a header.</summary>
+    public static string? CalchepVersion(string root)
+    {
+        try
+        {
+            var header = File.ReadAllText(Path.Combine(root, "include", "version.h"));
+            var quoted = header.Split('"');
+            return quoted.Length > 1 ? "CalcHEP " + quoted[1] : null;
+        }
+        catch (Exception) { return null; }
+    }
+
     // Herwig and Sherpa: through a shell — our own on Linux, a WSL distribution's on Windows
 
     /// <summary>The shell the generators are run through: bash here when the engine is the Linux one, and on
@@ -248,6 +287,21 @@ public static class Installation
             {
                 caps.Generators.Add(MCJob.Generator.Sherpa3);
                 caps.Versions[MCJob.RawValue(MCJob.Generator.Sherpa3)] = sherpa + where;
+            }
+        }
+        // WHIZARD and CalcHEP compute their own matrix elements, and both compile code as they run: they
+        // exist where the engine itself runs on Linux, not through a shell of someone else's.
+        if (Native)
+        {
+            if (Whizard is string whizard && VersionOf(whizard) is string w && w.ToLowerInvariant().Contains("whizard"))
+            {
+                caps.Generators.Add(MCJob.Generator.Whizard3);
+                caps.Versions[MCJob.RawValue(MCJob.Generator.Whizard3)] = w;
+            }
+            if (Calchep is string calchep && CalchepVersion(calchep) is string c)
+            {
+                caps.Generators.Add(MCJob.Generator.CalcHep3);
+                caps.Versions[MCJob.RawValue(MCJob.Generator.CalcHep3)] = c;
             }
         }
         return caps;

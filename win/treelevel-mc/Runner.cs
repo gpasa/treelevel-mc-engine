@@ -39,6 +39,8 @@ public sealed class Runner
                 MCJob.Generator.Pythia8 => Pythia(start),
                 MCJob.Generator.Herwig7 => Herwig(start),
                 MCJob.Generator.Sherpa3 => Sherpa(start),
+                MCJob.Generator.Whizard3 => Whizard(start),
+                MCJob.Generator.CalcHep3 => CalcHep(start),
                 _ => Failed($"{MCJob.Label(job.UseGenerator)} is not available on Windows yet", start),
             };
         }
@@ -181,6 +183,131 @@ public sealed class Runner
                         start, version);
     }
 
+    /// <summary>WHIZARD 3: it computes the process itself, from a Sindarin script, and showers and hadronises
+    /// with its own PYTHIA 6. It exists only where the engine runs on Linux — that is, in the image.</summary>
+    bool Whizard(DateTimeOffset start)
+    {
+        if (job.HardProcess is not MCProcess p || p.Beams.Length != 2 || p.BeamEnergies.Length != 2 || p.FinalState.Length == 0)
+            return Failed("WHIZARD computes the process itself and needs its description (beams, energies, final state)", start);
+        if (Installation.Container(engineVersion) is { } container) return InContainer(container, start);
+        if (Installation.Whizard is not string whizard) return Failed(Missing("WHIZARD 3"), start);
+
+        var names = new List<string>();
+        foreach (var code in p.Beams.Concat(p.FinalState))
+        {
+            if (Sindarin.Name(code) is not string n) return Failed($"WHIZARD does not know the particle {code}", start);
+            names.Add(n);
+        }
+        string sample = Path.GetFileNameWithoutExtension(job.Output);   // it appends the format's extension
+        // Initial-state radiation off the shower is WHIZARD's hadron-collision setting, and it refuses it
+        // outright on a lepton machine; the QED radiation of a lepton beam is `?isr_active`, a different
+        // thing, left to whoever asks for it in the extra settings — it would move the cross section.
+        bool hadronBeams = p.Beams.All(b => Math.Abs(b) > 100);
+        var script = new StringBuilder();
+        script.Append("model = SM\n");
+        script.Append($"process job = {names[0]}, {names[1]} => {string.Join(", ", names.Skip(2))}\n");
+        script.Append($"sqrts = {N(p.CentreOfMassEnergy)} GeV\n");
+        script.Append($"seed = {job.Seed % 900_000_000}\n");
+        if (p.MinimumPT is double pt) script.Append($"cuts = all Pt > {N(pt)} GeV [final]\n");
+        script.Append($"?ps_fsr_active = {Yes(job.Shower)}\n");
+        script.Append($"?ps_isr_active = {Yes(job.Shower && hadronBeams)}\n");
+        script.Append($"?hadronization_active = {Yes(job.Hadronisation)}\n");
+        script.Append("$hadronization_method = \"PYTHIA6\"\n");
+        script.Append($"n_events = {job.Events}\n");
+        script.Append($"$sample = \"{sample}\"\n");
+        script.Append("sample_format = hepmc\n");
+        if (!string.IsNullOrEmpty(job.ExtraSettings)) script.Append(job.ExtraSettings + "\n");
+        script.Append("simulate (job)\n");
+        File.WriteAllText(Path.Combine(folder.Path, "job.sin"), script.ToString().Replace("\r\n", "\n"), MCEngineProtocol.Utf8);
+
+        string version = Installation.Capabilities(engineVersion).Versions.TryGetValue("whizard3", out var v) ? v : "WHIZARD 3";
+        return RunProcess(whizard, new[] { "job.sin" }, start, version, crossSection: WhizardCrossSection);
+    }
+
+    static string Yes(bool b) => b ? "true" : "false";
+
+    /// <summary>WHIZARD writes no cross section into its HepMC3, so it is read from the last line of its
+    /// integration table — the combined result, in femtobarns.
+    ///   "   6      29826  1.9440903E+04  6.30E+00    0.03    0.06   47.83    1.13   3"</summary>
+    public static (double Value, double Error)? WhizardCrossSection(string log)
+    {
+        (double, double)? result = null;
+        foreach (var line in log.Split('\n'))
+        {
+            var f = line.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+            if (f.Length < 4) continue;
+            if (!int.TryParse(f[0], out _) || !int.TryParse(f[1], out _)) continue;
+            if (!f[2].Contains('E', StringComparison.Ordinal)) continue;
+            if (!double.TryParse(f[2], NumberStyles.Float, CultureInfo.InvariantCulture, out double value)) continue;
+            if (!double.TryParse(f[3], NumberStyles.Float, CultureInfo.InvariantCulture, out double error)) continue;
+            if (value <= 0) continue;
+            result = (value / 1000, error / 1000);                      // fb → pb, as everywhere else here
+        }
+        return result;
+    }
+
+    /// <summary>CalcHEP 3: it computes the hard process and stops there — no shower, no hadronisation. A job
+    /// runs in a working copy of its tree, made by <c>mkWORKdir</c>, and leaves Les Houches events behind,
+    /// which we turn into HepMC3 exactly as the passthrough backend does.</summary>
+    bool CalcHep(DateTimeOffset start)
+    {
+        if (job.HardProcess is not MCProcess p || p.Beams.Length != 2 || p.BeamEnergies.Length != 2 || p.FinalState.Length == 0)
+            return Failed("CalcHEP computes the process itself and needs its description (beams, energies, final state)", start);
+        if (Installation.Container(engineVersion) is { } container) return InContainer(container, start);
+        if (Installation.Calchep is not string root) return Failed(Missing("CalcHEP 3"), start);
+
+        var names = new List<string>();
+        foreach (var code in p.Beams.Concat(p.FinalState))
+        {
+            if (CalcHepNames.Name(code) is not string n) return Failed($"CalcHEP does not know the particle {code}", start);
+            names.Add(n);
+        }
+        string incoming = string.Join(",", names.Take(2));
+        string outgoing = string.Join(",", names.Skip(2));
+
+        var work = Path.Combine(folder.Path, "calchep");
+        try { if (Directory.Exists(work)) Directory.Delete(work, true); } catch (Exception) { }
+        if (!RunProcess(Path.Combine(root, "mkWORKdir"), new[] { work }, start, "CalcHEP",
+                        step: "préparation du dossier de travail", finishNow: false)) return false;
+
+        var batch = new StringBuilder();
+        batch.Append("Model:         SM\nModel changed: False\nGauge:         Feynman\n\n");
+        batch.Append($"Process:   {incoming}->{outgoing}\n\n");
+        batch.Append($"p1:        {N(p.BeamEnergies[0])}\n");
+        batch.Append($"p2:        {N(p.BeamEnergies[1])}\n");
+        if (p.MinimumPT is double pt)
+            batch.Append($"Cut parameter:    T({names[2]})\nCut invert:       False\nCut min:          {N(pt)}\nCut max:\n");
+        if (!string.IsNullOrEmpty(job.ExtraSettings)) batch.Append(job.ExtraSettings + "\n");
+        batch.Append($"Number of events (per run step):  {job.Events}\n");
+        batch.Append("Filename:                         events\nNTuple:                           False\n");
+        batch.Append("Cleanup:                          False\nParallelization method:           local\n");
+        batch.Append("Max number of nodes:              4\nMax number of processes per node: 1\n");
+        File.WriteAllText(Path.Combine(work, "batch_file"), batch.ToString().Replace("\r\n", "\n"), MCEngineProtocol.Utf8);
+
+        string version = Installation.CalchepVersion(root) ?? "CalcHEP 3";
+        if (!RunProcess(Path.Combine(work, "calchep_batch"), new[] { "batch_file" }, start, version,
+                        workingDirectory: work, finishNow: false)) return false;
+
+        // CalcHEP gzips its Les Houches file; unpack it, then convert as the passthrough backend does.
+        var packed = Path.Combine(work, "batch_results", "events-single.lhe.gz");
+        if (!File.Exists(packed)) return Failed($"{version} wrote no event file — see engine.log", start);
+        var lhe = Path.Combine(folder.Path, "events.lhe");
+        using (var source = File.OpenRead(packed))
+        using (var unpacked = new System.IO.Compression.GZipStream(source, System.IO.Compression.CompressionMode.Decompress))
+        using (var target = File.Create(lhe))
+            unpacked.CopyTo(target);
+
+        var events = LesHouchesLite.Read(lhe);
+        LesHouchesLite.WriteHepMC(events, folder.OutputPath(job), events.CrossSection);
+        Publish(new MCStatus(MCStatus.State.Finished, job.Id)
+        {
+            Number = number, Started = start, Finished = DateTimeOffset.Now, Progress = 1,
+            EventsWritten = events.Events.Count, CrossSection = events.CrossSection,
+            GeneratorVersion = version, Seconds = (DateTimeOffset.Now - start).TotalSeconds,
+        });
+        return true;
+    }
+
     static string N(double v) => v.ToString("G", CultureInfo.InvariantCulture);
     static string Quote(string path) => "'" + path.Replace("'", "'\\''") + "'";
 
@@ -234,7 +361,8 @@ public sealed class Runner
 
     bool RunProcess(string exe, string[] arguments, DateTimeOffset start, string name,
                     string? step = null, bool finishNow = true, string? workingDirectory = null,
-                    IReadOnlyDictionary<string, string>? environment = null)
+                    IReadOnlyDictionary<string, string>? environment = null,
+                    Func<string, (double Value, double Error)?>? crossSection = null)
     {
         var info = new ProcessStartInfo(exe)
         {
@@ -257,10 +385,13 @@ public sealed class Runner
         using var log = new StreamWriter(folder.LogPath, append: true, MCEngineProtocol.Utf8);
         log.AutoFlush = true;
         var gate = new object();
+        // Kept only when someone will read it: WHIZARD writes no cross section into its HepMC3, so it has to
+        // be picked out of what it printed.
+        var printed = crossSection == null ? null : new StringBuilder();
         void OnLine(string? line)
         {
             if (line == null) return;
-            lock (gate) log.WriteLine(line);
+            lock (gate) { log.WriteLine(line); printed?.AppendLine(line); }
             if (EventCount(line) is not int n) return;
             var s = status.Clone();
             s.EventsWritten = n;
@@ -279,6 +410,7 @@ public sealed class Runner
 
         var (written, sigma, sigmaError) = Summary(folder.OutputPath(job));
         if (written <= 0) return Failed($"{name} wrote no event — see engine.log", start);
+        if (printed != null && crossSection!(printed.ToString()) is { } read) { sigma = read.Value; sigmaError = read.Error; }
         Publish(new MCStatus(MCStatus.State.Finished, job.Id)
         {
             Number = number, Started = start, Finished = DateTimeOffset.Now, EventsWritten = written,
@@ -345,4 +477,35 @@ public sealed class Runner
         }
         return (events, sigma, sigmaError);
     }
+}
+
+/// <summary>Sindarin's particle names, as WHIZARD's Standard Model calls them. Beware: they are not CalcHEP's
+/// — there the electron is <c>e</c>, here it is <c>e1</c>.</summary>
+public static class Sindarin
+{
+    static readonly Dictionary<int, (string Particle, string Anti)> Names = new()
+    {
+        [1] = ("d", "D"), [2] = ("u", "U"), [3] = ("s", "S"), [4] = ("c", "C"), [5] = ("b", "B"), [6] = ("t", "T"),
+        [11] = ("e1", "E1"), [12] = ("n1", "N1"), [13] = ("e2", "E2"), [14] = ("n2", "N2"),
+        [15] = ("e3", "E3"), [16] = ("n3", "N3"),
+        [21] = ("gl", "gl"), [22] = ("A", "A"), [23] = ("Z", "Z"), [24] = ("Wp", "Wm"), [25] = ("H", "H"),
+    };
+
+    public static string? Name(int code)
+        => Names.TryGetValue(Math.Abs(code), out var pair) ? (code >= 0 ? pair.Particle : pair.Anti) : null;
+}
+
+/// <summary>CalcHEP's own particle names, as its Standard Model calls them.</summary>
+public static class CalcHepNames
+{
+    static readonly Dictionary<int, (string Particle, string Anti)> Names = new()
+    {
+        [1] = ("d", "D"), [2] = ("u", "U"), [3] = ("s", "S"), [4] = ("c", "C"), [5] = ("b", "B"), [6] = ("t", "T"),
+        [11] = ("e", "E"), [12] = ("ne", "Ne"), [13] = ("m", "M"), [14] = ("nm", "Nm"),
+        [15] = ("l", "L"), [16] = ("nl", "Nl"),
+        [21] = ("G", "G"), [22] = ("A", "A"), [23] = ("Z", "Z"), [24] = ("W+", "W-"), [25] = ("h", "h"),
+    };
+
+    public static string? Name(int code)
+        => Names.TryGetValue(Math.Abs(code), out var pair) ? (code >= 0 ? pair.Particle : pair.Anti) : null;
 }

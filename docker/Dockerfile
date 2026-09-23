@@ -102,6 +102,48 @@ RUN g++ -O2 -std=c++17 /tmp/treelevel-pythia.cpp -o "$PREFIX/bin/treelevel-pythi
       -I"$PREFIX/include" -L"$PREFIX/lib" -lpythia8 -Wl,-rpath,"$PREFIX/lib" \
     && rm -f /tmp/treelevel-pythia.cpp
 
+# WHIZARD, which computes its own matrix elements with O'Mega — hence OCaml. Three flags earn their place:
+#
+#   --disable-hepmc2   --enable-hepmc (that is HepMC3) and --enable-hepmc2 are BOTH on by default and HepMC2
+#                      wins, so without this one believes it has HepMC3 and has not. WHIZARD then integrates,
+#                      generates, showers and hadronises, and dies on the very last line — "HepMC3: Error:
+#                      library not linked" — because the engine asks for sample_format = hepmc.
+#   libtirpc-dev       configure looks for libtirpc through pkg-config; without it, it falls back silently on
+#                      SunRPC headers Debian no longer ships, and contrib/mcfio dies half an hour later on
+#                      rpc/types.h. Named explicitly rather than arriving by chance behind python3-dev.
+#   --disable-lhapdf   it demands the cteq6l1 and CT10 sets, which the --lite bootstrap does not install.
+#                      Of no consequence for the e+e- TreeLevel aims at; a choice, not an omission.
+#
+# FastJet is enabled because the prefix already holds it, so it costs nothing — though nothing in the Sindarin
+# the engine writes clusters anything today.
+ARG WHIZARD_VERSION=3.1.6
+RUN apt-get update && apt-get install -y --no-install-recommends ocaml libtirpc-dev \
+    && rm -rf /var/lib/apt/lists/* \
+    && wget -q "https://whizard.hepforge.org/downloads/?f=whizard-${WHIZARD_VERSION}.tar.gz" \
+         -O "whizard-${WHIZARD_VERSION}.tar.gz" \
+    && tar xzf "whizard-${WHIZARD_VERSION}.tar.gz" && rm "whizard-${WHIZARD_VERSION}.tar.gz" \
+    && cd "whizard-${WHIZARD_VERSION}" \
+    && ./configure --prefix="$PREFIX" \
+         --enable-hepmc --with-hepmc="$PREFIX" --disable-hepmc2 \
+         --enable-fastjet --with-fastjet="$PREFIX" \
+         --disable-lhapdf \
+    && make -j "$(nproc)" && make install \
+    && cd .. && rm -rf "whizard-${WHIZARD_VERSION}" \
+    && echo "https://whizard.hepforge.org/downloads/?f=whizard-${WHIZARD_VERSION}.tar.gz" \
+       >> "$PREFIX/share/treelevel-mc/SOURCES.txt"
+
+# CalcHEP: no patch, no flag — where macOS needed workarounds, Debian compiles the box as it comes. It must be
+# built where it will live, its scripts carrying absolute paths, and it links -lX11 even in batch mode.
+ARG CALCHEP_VERSION=3.9.2
+RUN apt-get update && apt-get install -y --no-install-recommends libx11-dev \
+    && rm -rf /var/lib/apt/lists/* \
+    && wget -q "https://theory.sinp.msu.ru/~pukhov/CALCHEP/calchep_${CALCHEP_VERSION}.tgz" \
+    && tar xzf "calchep_${CALCHEP_VERSION}.tgz" && rm "calchep_${CALCHEP_VERSION}.tgz" \
+    && mv "calchep_${CALCHEP_VERSION}" "$PREFIX/calchep" \
+    && cd "$PREFIX/calchep" && make \
+    && echo "https://theory.sinp.msu.ru/~pukhov/CALCHEP/calchep_${CALCHEP_VERSION}.tgz" \
+       >> "$PREFIX/share/treelevel-mc/SOURCES.txt"
+
 # --- the engine --------------------------------------------------------------------------------------------
 FROM mcr.microsoft.com/dotnet/sdk:8.0 AS engine
 ARG TARGETARCH
@@ -116,10 +158,13 @@ FROM debian:bookworm-slim
 ENV PREFIX=/opt/treelevel-mc
 ENV DEBIAN_FRONTEND=noninteractive
 
-# Only what the generators load at run time; the compilers stay in the builder stage. libzip4 is Sherpa's:
-# it links against it and will not start without it, which no Herwig test would ever have revealed.
+# What the generators need while they run. Two of them are not content with libraries: WHIZARD writes Fortran
+# for each process and compiles it on the spot, CalcHEP does the same with C — so a compiler, make and the C
+# headers stay in the finished image, which is unusual but is simply how these two work. libzip4 is Sherpa's,
+# and libx11-6 is CalcHEP's, which links -lX11 even in batch mode.
 RUN apt-get update && apt-get install -y --no-install-recommends \
       libgfortran5 libstdc++6 libgomp1 libgsl27 zlib1g libzip4 libsqlite3-0 python3-minimal ca-certificates \
+      gcc gfortran make libc6-dev libx11-6 \
     && rm -rf /var/lib/apt/lists/*
 
 COPY --from=hep    /opt/treelevel-mc /opt/treelevel-mc
