@@ -24,9 +24,14 @@ ARG SHERPA_VERSION=3.0.5
 ENV PREFIX=/opt/treelevel-mc
 ENV DEBIAN_FRONTEND=noninteractive
 
+# Failures in the middle of a pipeline must fail the layer: without this, `… | tee` reports the success of tee
+# and a build that never happened sails on to the next step.
+SHELL ["/bin/bash", "-o", "pipefail", "-c"]
+
+# python-is-python3: the bootstrap script asks for `python`, which Debian stopped providing years ago.
 RUN apt-get update && apt-get install -y --no-install-recommends \
       build-essential gfortran autoconf automake libtool make patch \
-      python3 python3-dev zlib1g-dev libgsl-dev libboost-dev \
+      python3 python3-dev python-is-python3 zlib1g-dev libgsl-dev libboost-dev \
       cmake libsqlite3-dev wget ca-certificates \
     && rm -rf /var/lib/apt/lists/*
 
@@ -35,7 +40,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 # nothing here computes loops. The log keeps every URL it fetched, which is what the GPL asks us to publish.
 RUN wget -q https://herwig.hepforge.org/downloads/herwig-bootstrap \
     && chmod +x herwig-bootstrap \
-    && ./herwig-bootstrap --lite -j "$(nproc)" "$PREFIX" 2>&1 | tee /tmp/bootstrap.log \
+    && python3 ./herwig-bootstrap --lite -j "$(nproc)" "$PREFIX" 2>&1 | tee /tmp/bootstrap.log \
     && mkdir -p "$PREFIX/share/treelevel-mc" \
     && grep -oE 'https?://[^ "]+\.(tar\.(gz|bz2|xz)|tgz)' /tmp/bootstrap.log | sort -u \
        > "$PREFIX/share/treelevel-mc/SOURCES.txt" \

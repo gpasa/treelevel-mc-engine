@@ -46,8 +46,12 @@ public static class Installation
     /// <summary>The name a program carries on this system: Windows wants the extension, Linux does not.</summary>
     static string Exe(string name) => OperatingSystem.IsWindows() ? name + ".exe" : name;
 
-    /// <summary>The Pythia driver: our own small program, built against the Pythia library.</summary>
+    /// <summary>The Pythia driver: our own small program, built against the Pythia library. The release
+    /// archive carries it under <c>Modules\pythia8</c> beside the engine, so that unpacking one folder is the
+    /// whole installation; a module built by hand lands in the support folder instead.</summary>
     public static string? PythiaDriver => Find(Exe("treelevel-pythia"),
+        Path.Combine(EngineDirectory, "Modules", "pythia8"),
+        Path.Combine(EngineDirectory, "Modules", "pythia8", "bin"),
         Path.Combine(ModulesDirectory, "pythia8"),
         Path.Combine(ModulesDirectory, "pythia8", "bin"));
 
