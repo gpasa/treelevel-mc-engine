@@ -1,0 +1,4 @@
+# Ce qui se reconstruit
+treelevel-mc/bin/
+treelevel-mc/obj/
+backends/pythia/build/

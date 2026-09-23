@@ -19,6 +19,15 @@
 #include <string>
 #include <sys/stat.h>
 #include <vector>
+#ifdef _WIN32
+#define WIN32_LEAN_AND_MEAN
+#define NOMINMAX
+#define NOGDI
+#include <windows.h>
+#ifndef S_IFDIR
+#define S_IFDIR _S_IFDIR
+#endif
+#endif
 #include "Pythia8/Pythia.h"
 #ifdef TREELEVEL_WITH_HEPMC3
 #include "Pythia8Plugins/HepMC3.h"
@@ -31,9 +40,34 @@ bool isDirectory(const std::string& path) {
   return stat(path.c_str(), &info) == 0 && (info.st_mode & S_IFDIR);
 }
 
-/// Where Pythia's xmldoc lives: the environment first, then the usual package layouts.
+/// The folder the running program is in, so that a module can carry its own data next to it.
+std::string executableFolder() {
+#ifdef _WIN32
+  char buffer[MAX_PATH];
+  DWORD n = GetModuleFileNameA(nullptr, buffer, MAX_PATH);
+  if (n == 0 || n >= MAX_PATH) return "";
+  std::string path(buffer, n);
+  const size_t cut = path.find_last_of("\\/");
+  return cut == std::string::npos ? "" : path.substr(0, cut);
+#else
+  return "";
+#endif
+}
+
+/// Where Pythia's xmldoc lives: the environment first, then the usual package layouts. Windows has no such
+/// layout — the module that win/backends/pythia/build.ps1 installs carries xmldoc beside the driver.
 std::string dataPath() {
   if (const char* env = std::getenv("PYTHIA8DATA")) return env;
+#ifdef _WIN32
+  std::vector<std::string> candidates;
+  const std::string folder = executableFolder();
+  if (!folder.empty())
+    for (const char* relative : {"/xmldoc", "/share/Pythia8/xmldoc", "/../share/Pythia8/xmldoc"})
+      candidates.push_back(folder + relative);
+  if (const char* local = std::getenv("LOCALAPPDATA"))
+    candidates.push_back(std::string(local) + "/TreeLevel MC Engine/Modules/pythia8/xmldoc");
+  for (const std::string& path : candidates) if (isDirectory(path)) return path;
+#else
   const char* candidates[] = {
     "/opt/local/share/doc/pythia/xmldoc",           // MacPorts
     "/opt/homebrew/share/Pythia8/xmldoc",           // Homebrew (Apple silicon)
@@ -41,6 +75,7 @@ std::string dataPath() {
     "/usr/share/Pythia8/xmldoc",
   };
   for (const char* path : candidates) if (isDirectory(path)) return path;
+#endif
   return "";
 }
 

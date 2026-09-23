@@ -211,3 +211,9 @@ La vérification finale, `spctl -a -t open --context context:primary-signature -
 
 GNU General Public License v3 ou ultérieure — voir `LICENSE`. Le fichier `Protocol/MCEngineProtocol.swift`,
 partagé avec TreeLevel, est sous licence MIT (voir son en-tête) pour que les deux programmes puissent le lire.
+
+## Windows
+
+Le port Windows est dans [`win/`](win/) : le moteur en C#, le module Pythia 8 construit avec MSVC (`win/backends/pythia`),
+Herwig et Sherpa dans WSL. Le protocole est le même : un dossier de travail écrit sur un Mac se relit sur
+Windows et inversement. Voir [`win/README.md`](win/README.md).
