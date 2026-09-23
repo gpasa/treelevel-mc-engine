@@ -174,7 +174,10 @@ public sealed class Runner
         // Sherpa appends its own extension to EVENT_OUTPUT; the job expects events.hepmc.
         string quoted = Quote(inside);
         string stem = Path.GetFileNameWithoutExtension(job.Output);
-        return RunInShell($"cd {quoted} && Sherpa -f Sherpa.yaml && (test -f {stem}.hepmc || (test -f {stem}.hepmc3 && mv {stem}.hepmc3 {stem}.hepmc) || (test -f {stem}.hepmc.gz && gunzip -f {stem}.hepmc.gz)) ",
+        // Sherpa 3.0.5 adds nothing at all to the name in EVENT_OUTPUT: HepMC3[events] — it writes a file
+        // called `events`, full stop. Older ones append .hepmc, .hepmc3 or .hepmc.gz. All four are accepted:
+        // without the last, fifty perfectly good events were being reported as a failure.
+        return RunInShell($"cd {quoted} && Sherpa -f Sherpa.yaml && (test -f {stem}.hepmc || (test -f {stem}.hepmc3 && mv {stem}.hepmc3 {stem}.hepmc) || (test -f {stem}.hepmc.gz && gunzip -f {stem}.hepmc.gz) || (test -f {stem} && mv {stem} {stem}.hepmc)) ",
                         start, version);
     }
 

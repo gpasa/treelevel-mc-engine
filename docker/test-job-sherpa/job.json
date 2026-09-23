@@ -1,0 +1,20 @@
+{
+  "protocolVersion" : 2,
+  "id" : "essai-sherpa",
+  "generator" : "sherpa3",
+  "process" : "e- e+ -> b b~ at 200 GeV",
+  "events" : 50,
+  "seed" : 11,
+  "shower" : true,
+  "hadronisation" : true,
+  "multipleInteractions" : false,
+  "decays" : true,
+  "hardProcess" : {
+    "beams" : [ 11, -11 ],
+    "beamEnergies" : [ 100.0, 100.0 ],
+    "finalState" : [ 5, -5 ],
+    "couplingOrders" : { },
+    "model" : "SM"
+  },
+  "output" : "events.hepmc"
+}

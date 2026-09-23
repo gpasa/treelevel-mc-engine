@@ -1,4 +1,5 @@
-# Le Dockerfile ne lit qu'une chose du dépôt : win/treelevel-mc, les sources C# du moteur. Sans ce
+# Le Dockerfile ne lit que deux choses du dépôt : win/treelevel-mc, les sources C# du moteur, et
+# Backends/pythia/main.cpp, le pilote de Pythia — le même que celui que Windows construit. Sans ce
 # fichier, Docker envoie 1,9 Go au démon à chaque construction — dont 203 Mo d'artefacts MSVC que
 # « COPY win/treelevel-mc/ » déposerait ensuite dans l'étape Linux, où un obj/ rempli pour win-arm64
 # n'a rien à faire.
@@ -7,12 +8,14 @@
 .build
 build
 App
-Backends
+Backends/herwig
+Backends/pythia/Makefile
+Backends/pythia/treelevel-pythia
 Protocol
 Sources
 scripts
 Package.swift
-docker/test-job
+docker/test-job*
 win/backends
 win/package
 win/treelevel-mc/bin

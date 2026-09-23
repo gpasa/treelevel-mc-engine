@@ -21,6 +21,7 @@
 FROM debian:bookworm AS hep
 
 ARG SHERPA_VERSION=3.0.5
+ARG PYTHIA_VERSION=8318
 ENV PREFIX=/opt/treelevel-mc
 ENV DEBIAN_FRONTEND=noninteractive
 
@@ -78,6 +79,24 @@ RUN wget -q -O sherpa.tar.gz \
        >> "$PREFIX/share/treelevel-mc/SOURCES.txt" \
     && rm -rf build-sherpa "sherpa-v${SHERPA_VERSION}"
 
+# Pythia 8 and the driver that reads a Les Houches file and writes HepMC3 — the same driver Windows builds
+# with MSVC. It is here so that the image is the whole engine rather than two thirds of it: someone who has
+# Docker installs one thing and has all three generators.
+RUN wget -q -O pythia.tar.gz \
+      "https://gitlab.com/Pythia8/releases/-/archive/pythia${PYTHIA_VERSION}/releases-pythia${PYTHIA_VERSION}.tar.gz" \
+    && tar xzf pythia.tar.gz && rm pythia.tar.gz \
+    && cd "releases-pythia${PYTHIA_VERSION}" \
+    && ./configure --prefix="$PREFIX" \
+    && make -j "$(nproc)" && make install \
+    && cd .. && rm -rf "releases-pythia${PYTHIA_VERSION}" \
+    && echo "https://gitlab.com/Pythia8/releases/-/archive/pythia${PYTHIA_VERSION}/releases-pythia${PYTHIA_VERSION}.tar.gz" \
+       >> "$PREFIX/share/treelevel-mc/SOURCES.txt"
+
+COPY Backends/pythia/main.cpp /tmp/treelevel-pythia.cpp
+RUN g++ -O2 -std=c++17 /tmp/treelevel-pythia.cpp -o "$PREFIX/bin/treelevel-pythia" \
+      -I"$PREFIX/include" -L"$PREFIX/lib" -lpythia8 -Wl,-rpath,"$PREFIX/lib" \
+    && rm -f /tmp/treelevel-pythia.cpp
+
 # --- the engine --------------------------------------------------------------------------------------------
 FROM mcr.microsoft.com/dotnet/sdk:8.0 AS engine
 ARG TARGETARCH
@@ -92,9 +111,10 @@ FROM debian:bookworm-slim
 ENV PREFIX=/opt/treelevel-mc
 ENV DEBIAN_FRONTEND=noninteractive
 
-# Only what the two generators load at run time; the compilers stay in the builder stage.
+# Only what the generators load at run time; the compilers stay in the builder stage. libzip4 is Sherpa's:
+# it links against it and will not start without it, which no Herwig test would ever have revealed.
 RUN apt-get update && apt-get install -y --no-install-recommends \
-      libgfortran5 libstdc++6 libgomp1 libgsl27 zlib1g libsqlite3-0 python3-minimal ca-certificates \
+      libgfortran5 libstdc++6 libgomp1 libgsl27 zlib1g libzip4 libsqlite3-0 python3-minimal ca-certificates \
     && rm -rf /var/lib/apt/lists/*
 
 COPY --from=hep    /opt/treelevel-mc /opt/treelevel-mc
@@ -104,7 +124,14 @@ ENV PATH=$PREFIX/bin:$PATH \
     LD_LIBRARY_PATH=$PREFIX/lib:$PREFIX/lib/ThePEG \
     HERWIGPATH=$PREFIX/share/Herwig \
     SHERPA_INCLUDE_PATH=$PREFIX/include/SHERPA-MC \
-    SHERPA_SHARE_PATH=$PREFIX/share/SHERPA-MC
+    SHERPA_SHARE_PATH=$PREFIX/share/SHERPA-MC \
+    HOME=/root
+
+# The engine asks the generators for their version through a login shell — which is what WSL needs, where the
+# user's PATH lives in ~/.bashrc. But /etc/profile rewrites PATH from scratch, and ENV does not survive that:
+# $PREFIX/bin vanished, and `capabilities` saw nothing but passthrough while `Herwig --version` answered
+# perfectly. The environment therefore also lives where a login shell will read it.
+COPY docker/profile.sh /etc/profile.d/treelevel-mc.sh
 
 # The job folder is bind-mounted here; the engine writes its answers back into it.
 WORKDIR /job
