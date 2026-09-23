@@ -34,17 +34,22 @@ SHELL ["/bin/bash", "-o", "pipefail", "-c"]
 RUN apt-get update && apt-get install -y --no-install-recommends \
       build-essential gfortran autoconf automake libtool make patch \
       python3 python3-dev python-is-python3 cython3 python3-setuptools \
-      zlib1g-dev libgsl-dev libboost-dev \
-      cmake libsqlite3-dev wget ca-certificates \
+      zlib1g-dev libgsl-dev libboost-all-dev \
+      cmake libsqlite3-dev libzip-dev pkg-config git wget ca-certificates \
     && ln -sf /usr/bin/cython3 /usr/local/bin/cython \
     && rm -rf /var/lib/apt/lists/*
 
 # Herwig's own bootstrap builds the whole stack it needs — ThePEG, FastJet, LHAPDF, HepMC3 — into one prefix.
 # --lite leaves out the loop libraries (VBFNLO, MadGraph, LoopTools): TreeLevel provides the hard process, so
 # nothing here computes loops. The log keeps every URL it fetched, which is what the GPL asks us to publish.
+#
+# Debian's Boost rather than the one the bootstrap builds for itself: ThePEG links the compiled
+# unit_test_framework, and on arm64 the bootstrap's own build left configure unable to work out the link flags
+# ("could not figure out which toolset name to use"). The distribution's is complete on both architectures,
+# and skipping that build saves a quarter of an hour.
 RUN wget -q https://herwig.hepforge.org/downloads/herwig-bootstrap \
     && chmod +x herwig-bootstrap \
-    && python3 ./herwig-bootstrap --lite -j "$(nproc)" "$PREFIX" 2>&1 | tee /tmp/bootstrap.log \
+    && python3 ./herwig-bootstrap --lite -j "$(nproc)" --with-boost=/usr "$PREFIX" 2>&1 | tee /tmp/bootstrap.log \
     && mkdir -p "$PREFIX/share/treelevel-mc" \
     && grep -oE 'https?://[^ "]+\.(tar\.(gz|bz2|xz)|tgz)' /tmp/bootstrap.log | sort -u \
        > "$PREFIX/share/treelevel-mc/SOURCES.txt" \
