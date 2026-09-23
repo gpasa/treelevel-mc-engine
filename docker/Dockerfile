@@ -41,11 +41,11 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 # Herwig carries LoopTools, whose D0func.F writes `parameter (nz2 = -2147483648)` — a constant that overflows
 # for a modern gfortran, which then refuses everything that uses it ("Integer too big for its kind at (1)").
-# The flag it suggests cannot go through the environment, configure overwrites FCFLAGS; a wrapper ahead of
-# /usr/bin in the PATH always carries it.
-RUN printf '%s\n' '#!/bin/sh' 'exec /usr/bin/gfortran -fno-range-check "\$@"' > /usr/local/bin/gfortran \
-    && chmod +x /usr/local/bin/gfortran \
-    && gfortran --version | head -1
+# The flag it suggests cannot go through the environment, configure overwrites FCFLAGS; the wrapper sits ahead
+# of /usr/bin in the PATH and always carries it. It is a file of its own rather than a printf, so that no
+# layer of quoting stands between what is written here and what ends up in the script.
+COPY docker/gfortran-wrapper.sh /usr/local/bin/gfortran
+RUN chmod +x /usr/local/bin/gfortran && gfortran --version | head -1
 
 # Herwig's own bootstrap builds the whole stack it needs — ThePEG, FastJet, LHAPDF, HepMC3 — into one prefix.
 # --lite leaves out the loop libraries (VBFNLO, MadGraph, LoopTools): TreeLevel provides the hard process, so
