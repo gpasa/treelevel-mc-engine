@@ -14,7 +14,12 @@ public static class Installation
     {
         get
         {
-            var dir = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), MCEngineProtocol.SupportFolderName);
+            // Create, not None: on Unix the default only answers when the folder already exists, and a lean
+            // image has no ~/.local/share. The empty string it returned then made a relative path, so the
+            // support folder was created wherever the engine happened to stand — inside the user's own job.
+            var local = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData,
+                                                  Environment.SpecialFolderOption.Create);
+            var dir = Path.Combine(local, MCEngineProtocol.SupportFolderName);
             Directory.CreateDirectory(dir);
             return dir;
         }

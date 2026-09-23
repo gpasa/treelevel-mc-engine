@@ -144,6 +144,14 @@ RUN apt-get update && apt-get install -y --no-install-recommends libx11-dev \
     && echo "https://theory.sinp.msu.ru/~pukhov/CALCHEP/calchep_${CALCHEP_VERSION}.tgz" \
        >> "$PREFIX/share/treelevel-mc/SOURCES.txt"
 
+# The bootstrap leaves its unpacked trees behind, objects and all — ThePEG alone is 1.1 GB — and the COPY
+# below would carry every one of them into the finished image, which is half its weight for nothing.
+#
+# The GPL asks for the corresponding source to be *available*, not embedded in the binary: it is, three times
+# over, and none of the three goes away here — this Dockerfile is versioned and is the recipe itself,
+# SOURCES.txt inside the image names every archive the build fetched, and the repository holds the engine.
+RUN rm -rf "$PREFIX/src"
+
 # --- the engine --------------------------------------------------------------------------------------------
 FROM mcr.microsoft.com/dotnet/sdk:8.0 AS engine
 ARG TARGETARCH
