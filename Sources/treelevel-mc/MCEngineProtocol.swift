@@ -204,7 +204,10 @@ public struct MCJobFolder {
     @discardableResult
     public func write(job: MCJob, lheText: String) throws -> MCJob {
         try FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
-        try lheText.write(to: inputURL(job), atomically: true, encoding: .utf8)
+        // A generator that computes its own matrix elements is given the process, and no events to dress.
+        if job.generator.readsLesHouches {
+            try lheText.write(to: inputURL(job), atomically: true, encoding: .utf8)
+        }
         try Self.encoder.encode(job).write(to: jobURL)
         try write(status: MCStatus(state: .queued, jobID: job.id))
         return job
