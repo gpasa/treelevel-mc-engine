@@ -58,10 +58,13 @@ jobs:
           cache-to: type=gha,mode=max,scope=${{ matrix.platform }}
           outputs: type=image,name=${{ env.REGISTRY }}/${{ env.IMAGE }},push-by-digest=true,name-canonical=true,push=true
 
+      # The bare hexadecimal, without its "sha256:" prefix: a colon is not allowed in an artifact's file name,
+      # and the job that joins the architectures puts the prefix back.
       - name: Keep the digest
         run: |
           mkdir -p /tmp/digests
-          touch "/tmp/digests/${{ steps.build.outputs.digest }}"
+          digest='${{ steps.build.outputs.digest }}'
+          touch "/tmp/digests/${digest#sha256:}"
         shell: bash
 
       - uses: actions/upload-artifact@v4
