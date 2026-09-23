@@ -58,6 +58,33 @@ jobs:
           cache-to: type=gha,mode=max,scope=${{ matrix.platform }}
           outputs: type=image,name=${{ env.REGISTRY }}/${{ env.IMAGE }},push-by-digest=true,name-canonical=true,push=true
 
+      # An image that builds is not an image that runs. Everything that cost us a day — libzip4 absent from
+      # the runtime stage, a login shell throwing the PATH away, perl-modules missing under calchep_batch —
+      # was invisible at build time and obvious at the first run. So it is run here, on a runner of its own
+      # architecture, which is the only place where both are exercised natively before anyone downloads them.
+      - name: L'image démarre-t-elle, et avec tous ses générateurs
+        run: |
+          set -euo pipefail
+          image="$REGISTRY/$IMAGE@${{ steps.build.outputs.digest }}"
+          docker run --rm "$image" capabilities | tee capabilities.json
+          for g in passthrough pythia8 herwig7 sherpa3 whizard3 calchep3; do
+            grep -q "\"$g\"" capabilities.json || { echo "::error::$g manque dans capabilities"; exit 1; }
+          done
+        shell: bash
+
+      # And a real job, end to end: Herwig showers and hadronises the 200 events TreeLevel wrote, and the
+      # cross section of the input must come out untouched on the other side.
+      - name: Un vrai travail, de bout en bout
+        run: |
+          set -euo pipefail
+          image="$REGISTRY/$IMAGE@${{ steps.build.outputs.digest }}"
+          docker run --rm -v "$PWD/docker/test-job:/job" "$image" run /job
+          cat docker/test-job/status.json
+          grep -q '"state": *"finished"' docker/test-job/status.json || { echo "::error::le travail a échoué"; exit 1; }
+          grep -q '"eventsWritten": *200' docker/test-job/status.json || { echo "::error::200 événements attendus"; exit 1; }
+          grep -q '"crossSection": *3.113986' docker/test-job/status.json || { echo "::error::la section efficace a bougé"; exit 1; }
+        shell: bash
+
       # The bare hexadecimal, without its "sha256:" prefix: a colon is not allowed in an artifact's file name,
       # and the job that joins the architectures puts the prefix back.
       - name: Keep the digest
