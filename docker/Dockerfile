@@ -132,6 +132,14 @@ RUN apt-get update && apt-get install -y --no-install-recommends ocaml libtirpc-
     && echo "https://whizard.hepforge.org/downloads/?f=whizard-${WHIZARD_VERSION}.tar.gz" \
        >> "$PREFIX/share/treelevel-mc/SOURCES.txt"
 
+# WHIZARD installs one matrix-element compiler per model it knows — MSSM, NMSSM, UED, little Higgs, extra
+# dimensions — sixty-one of them, 704 MB, a quarter of the image. The engine writes `model = SM` and nothing
+# in TreeLevel offers another, so that one is kept, along with the generic omega3.opt which is not touched by
+# the pattern. Deleting here rather than in the final stage is what makes the image smaller: only the state
+# of this stage is copied, never its layers. Rebuilding without this line brings the others back.
+RUN find "$PREFIX/bin" -name 'omega_*.opt' ! -name 'omega_SM.opt' -delete \
+    && du -sh "$PREFIX/bin"
+
 # CalcHEP: no patch, no flag — where macOS needed workarounds, Debian compiles the box as it comes. It must be
 # built where it will live, its scripts carrying absolute paths, and it links -lX11 even in batch mode.
 ARG CALCHEP_VERSION=3.9.2
@@ -172,7 +180,7 @@ ENV DEBIAN_FRONTEND=noninteractive
 # and libx11-6 is CalcHEP's, which links -lX11 even in batch mode.
 RUN apt-get update && apt-get install -y --no-install-recommends \
       libgfortran5 libstdc++6 libgomp1 libgsl27 zlib1g libzip4 libsqlite3-0 python3-minimal ca-certificates \
-      gcc gfortran make libc6-dev libx11-6 \
+      gcc gfortran make libc6-dev libx11-dev perl-modules-5.36 \
     && rm -rf /var/lib/apt/lists/*
 
 COPY --from=hep    /opt/treelevel-mc /opt/treelevel-mc

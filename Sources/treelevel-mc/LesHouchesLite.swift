@@ -26,7 +26,7 @@ enum LesHouchesLite {
             if line.hasPrefix("<init") {
                 _ = next()
                 if let l = next() { crossSection = Double(l.split(separator: " ").first ?? "") }
-            } else if line.hasPrefix("<event") {
+            } else if line.hasPrefix("<event>") || line.hasPrefix("<event ") {
                 guard let header = next() else { break }
                 let h = header.split(separator: " ")
                 guard h.count >= 6, let n = Int(h[0]), let weight = Double(h[2]), let scale = Double(h[3]) else { continue }

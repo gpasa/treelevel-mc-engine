@@ -40,11 +40,15 @@ public static class LesHouchesLite
                 Next();
                 if (Next() is string l && Fields(l) is { Length: > 0 } f) crossSection = D(f[0]);
             }
-            else if (line.StartsWith("<event", StringComparison.Ordinal))
+            // The tag, and nothing that merely starts like it: CalcHEP writes a hepML header holding
+            // <eventsNumber>, which a looser test takes for the beginning of an event.
+            else if (line.StartsWith("<event>", StringComparison.Ordinal) || line.StartsWith("<event ", StringComparison.Ordinal))
             {
                 if (Next() is not string header) break;
                 var h = Fields(header);
-                if (h.Length < 6) break;
+                // A line that is not an event header is skipped, not the end of the file: reading stopped at
+                // the first surprise and a whole sample came out empty without a word.
+                if (h.Length < 6) continue;
                 int n = I(h[0]);
                 double weight = D(h[2]), scale = D(h[3]);
                 var particles = new List<Particle>();
@@ -52,7 +56,7 @@ public static class LesHouchesLite
                 {
                     if (Next() is not string pl) break;
                     var p = Fields(pl);
-                    if (p.Length < 11) break;
+                    if (p.Length < 11) continue;
                     particles.Add(new Particle(I(p[0]), I(p[1]), I(p[2]), I(p[3]), I(p[4]), I(p[5]),
                                                D(p[6]), D(p[7]), D(p[8]), D(p[9]), D(p[10])));
                 }
