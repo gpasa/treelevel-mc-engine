@@ -1,0 +1,20 @@
+# Le Dockerfile ne lit qu'une chose du dépôt : win/treelevel-mc, les sources C# du moteur. Sans ce
+# fichier, Docker envoie 1,9 Go au démon à chaque construction — dont 203 Mo d'artefacts MSVC que
+# « COPY win/treelevel-mc/ » déposerait ensuite dans l'étape Linux, où un obj/ rempli pour win-arm64
+# n'a rien à faire.
+.git
+.github
+.build
+build
+App
+Backends
+Protocol
+Sources
+scripts
+Package.swift
+docker/test-job
+win/backends
+win/package
+win/treelevel-mc/bin
+win/treelevel-mc/obj
+**/.DS_Store
