@@ -1,0 +1,6 @@
+# Tout ce que le moteur écrit en passant
+*
+!.gitignore
+!README.md
+!job.json
+!events.lhe

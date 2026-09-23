@@ -1,0 +1,14 @@
+{
+  "protocolVersion" : 2,
+  "id" : "essai-conteneur",
+  "generator" : "herwig7",
+  "process" : "e- e+ -> b b~ at 200 GeV",
+  "events" : 200,
+  "seed" : 11,
+  "shower" : true,
+  "hadronisation" : true,
+  "multipleInteractions" : false,
+  "decays" : true,
+  "input" : "events.lhe",
+  "output" : "events.hepmc"
+}
