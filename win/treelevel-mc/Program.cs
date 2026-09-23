@@ -21,6 +21,7 @@ if (args.Length == 0)
     Console.WriteLine("""
     usage: treelevel-mc <command>
       run <job folder>            run the job written by TreeLevel (job.json, events.lhe)
+      serve <folder> [--every s]  stay up, run every job folder that turns up inside it
       capabilities [--out file]   list the generators this installation can run, as JSON
       version
     """);
@@ -63,6 +64,16 @@ switch (args[0])
         Installation.PublishCapabilities(EngineVersion);
         var runner = new Runner(folder, job, EngineVersion, Installation.NextJobNumber());
         return runner.Run() ? 0 : 1;
+    }
+
+    case "serve":
+    {
+        if (args.Length < 2) return Fail("serve needs the folder to watch");
+        double every = 2;
+        int k = Array.IndexOf(args, "--every");
+        if (k >= 0 && k + 1 < args.Length) double.TryParse(args[k + 1], System.Globalization.NumberStyles.Float,
+                                                           System.Globalization.CultureInfo.InvariantCulture, out every);
+        return Serve.Run(args[1], EngineVersion, every);
     }
 
     default:
