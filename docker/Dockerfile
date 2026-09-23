@@ -29,10 +29,14 @@ ENV DEBIAN_FRONTEND=noninteractive
 SHELL ["/bin/bash", "-o", "pipefail", "-c"]
 
 # python-is-python3: the bootstrap script asks for `python`, which Debian stopped providing years ago.
+# cython: it rebuilds the Python interfaces of LHAPDF, YODA and Rivet and stops outright without it. Debian
+# names the program cython3, and the bootstrap looks for cython.
 RUN apt-get update && apt-get install -y --no-install-recommends \
       build-essential gfortran autoconf automake libtool make patch \
-      python3 python3-dev python-is-python3 zlib1g-dev libgsl-dev libboost-dev \
+      python3 python3-dev python-is-python3 cython3 python3-setuptools \
+      zlib1g-dev libgsl-dev libboost-dev \
       cmake libsqlite3-dev wget ca-certificates \
+    && ln -sf /usr/bin/cython3 /usr/local/bin/cython \
     && rm -rf /var/lib/apt/lists/*
 
 # Herwig's own bootstrap builds the whole stack it needs — ThePEG, FastJet, LHAPDF, HepMC3 — into one prefix.
