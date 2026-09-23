@@ -72,16 +72,50 @@ treelevel-mc capabilities     # pythia8 doit apparaître, avec sa version
 
 ## Herwig 7 et Sherpa 3 dans WSL
 
-Aucun des deux ne se construit avec MSVC ; ils tournent dans une distribution WSL et le moteur les pilote
-depuis Windows, en traduisant les chemins avec `wslpath`. Le moteur ne les propose que s'ils répondent
-vraiment : `Herwig --version` et `Sherpa --version` sont interrogés à chaque `capabilities`.
+Aucun des deux ne se construit avec MSVC. Ils tournent dans une distribution WSL et le moteur les pilote
+depuis Windows : il traduit le dossier de travail avec `wslpath`, lance `Herwig read` puis `Herwig run`, ou
+`Sherpa -f`, et relit le HepMC3 produit là où Windows le voit. Aucune copie, le dossier est le même.
+
+Le moteur ne les propose que s'ils répondent vraiment : `capabilities` interroge `Herwig --version` et
+`Sherpa --version` à chaque appel, et une installation cassée — une bibliothèque disparue après une mise à
+jour de la distribution, par exemple — disparaît de la liste au lieu d'échouer au milieu d'un travail.
 
 ```powershell
-wsl --install -d Ubuntu
+wsl --install -d Ubuntu      # redémarrage, puis un compte à créer dans la distribution
 ```
 
-puis, dans la distribution, le `bootstrap` de Herwig ou les paquets de Sherpa (voir le README principal, la
-recette est celle de macOS sans les contournements propres à clang).
+Ensuite, dans Ubuntu. Les contournements que macOS impose (gcc plutôt que clang, `_Static_assert`,
+`-fno-range-check`) n'ont pas lieu d'être ici : gcc est le compilateur du système.
+
+```bash
+# Herwig 7 — le bootstrap officiel construit toute la pile (ThePEG, FastJet, LHAPDF, HepMC3).
+sudo apt update && sudo apt install -y build-essential gfortran autoconf automake libtool \
+     python3-dev zlib1g-dev libboost-dev libgsl-dev wget
+wget https://herwig.hepforge.org/downloads/herwig-bootstrap
+chmod +x herwig-bootstrap
+./herwig-bootstrap --lite -j $(nproc) ~/herwig7        # une à deux heures
+echo 'source ~/herwig7/bin/activate' >> ~/.bashrc
+
+# Sherpa 3 — CMake, en réutilisant les dépendances du préfixe de Herwig.
+sudo apt install -y cmake libsqlite3-dev
+cmake -S sherpa-3.0.5 -B build -DCMAKE_INSTALL_PREFIX=$HOME/sherpa3 \
+      -DSHERPA_ENABLE_LHAPDF=ON  -DLHAPDF_DIR=$HOME/herwig7 \
+      -DSHERPA_ENABLE_HEPMC3=ON  -DHepMC3_DIR=$HOME/herwig7 \
+      -DSHERPA_ENABLE_FASTJET=ON -DFASTJET_DIR=$HOME/herwig7
+cmake --build build -j $(nproc) && cmake --install build
+echo 'export PATH=$HOME/sherpa3/bin:$PATH' >> ~/.bashrc
+```
+
+Le moteur lance ses commandes avec `bash -lc`, donc le `PATH` que ces deux lignes posent est celui qu'il voit.
+
+```powershell
+treelevel-mc capabilities     # herwig7 et sherpa3 doivent apparaître, suivis de « (WSL) »
+```
+
+> Ces deux chemins sont écrits mais **pas encore éprouvés** : WSL n'est pas installé sur la machine de
+> développement. Le code de repli, lui, l'est — sans distribution, les deux générateurs ne sont pas proposés
+> et un travail qui les demande échoue tout de suite avec « Herwig 7 runs inside WSL, which is not installed »
+> plutôt qu'à mi-parcours.
 
 ## Différences avec macOS
 
