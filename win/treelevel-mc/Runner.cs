@@ -68,7 +68,14 @@ public sealed class Runner
     /// <summary>Pythia 8 through our small driver, which reads the LHE file and writes HepMC3.</summary>
     bool Pythia(DateTimeOffset start)
     {
-        if (Installation.PythiaDriver is not string driver) return Failed("the Pythia 8 module is not installed", start);
+        // The native module first — 6.5 MB that run where no virtualisation is to be had — and the container
+        // behind it. The module must answer, not merely exist: a broken one would otherwise be preferred to
+        // an image that works, and the job would fail for a reason nobody could guess.
+        if (Installation.WorkingPythiaDriver is not string driver)
+        {
+            if (Installation.Container(engineVersion) is { } container) return InContainer(container, start);
+            return Failed("the Pythia 8 module is not installed", start);
+        }
         // The generator runs with the job folder as its working directory and is given relative names: Pythia
         // reads `Beams:LHEF` as a single word, so a path with spaces would be cut short.
         var settings = new StringBuilder();

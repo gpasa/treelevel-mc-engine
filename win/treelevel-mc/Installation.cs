@@ -79,6 +79,13 @@ public static class Installation
         Path.Combine(ModulesDirectory, "pythia8"),
         Path.Combine(ModulesDirectory, "pythia8", "bin"));
 
+    /// <summary>The Pythia driver, but only when it answers. A file that exists is not a program that runs:
+    /// a module left behind by a half-finished install, or one whose Visual C++ runtime went missing, would
+    /// otherwise be preferred to a container that works. This is the same question `capabilities` asks, and
+    /// the two must not answer differently.</summary>
+    public static string? WorkingPythiaDriver
+        => PythiaDriver is string driver && VersionOf(driver) != null ? driver : null;
+
     /// <summary>Pythia's xmldoc folder, which the driver needs; passed through PYTHIA8DATA.</summary>
     public static string? PythiaData
     {
@@ -182,11 +189,14 @@ public static class Installation
 
     // Herwig and Sherpa without WSL: the container image, which carries them ready to run
 
-    /// <summary>The image that carries Herwig and Sherpa. TREELEVEL_MC_IMAGE overrides it, for a local build
-    /// or a mirror.</summary>
+    /// <summary>Where the image lives, without its tag.</summary>
+    public const string Repository = "ghcr.io/gpasa/treelevel-mc-engine";
+
+    /// <summary>The image that carries the generators, as it should be named when telling someone to fetch
+    /// it. TREELEVEL_MC_IMAGE overrides it, for a local build or a mirror.</summary>
     public static string Image(string engineVersion)
         => Environment.GetEnvironmentVariable("TREELEVEL_MC_IMAGE") is string set && set.Trim().Length > 0
-            ? set.Trim() : "ghcr.io/gpasa/treelevel-mc-engine:" + engineVersion;
+            ? set.Trim() : Repository + ":" + engineVersion;
 
     /// <summary>Docker, but only when its daemon answers: Docker Desktop installs the client long before the
     /// engine can run, and on a machine without virtualisation it never will.</summary>
@@ -209,12 +219,19 @@ public static class Installation
         => Run(docker, new[] { "image", "inspect", image }).Code == 0;
 
     /// <summary>Docker and the image together, when both are there: this is how Herwig and Sherpa run on
-    /// Windows, and it is preferred over WSL when the two are available.</summary>
+    /// Windows, and it is preferred over WSL when the two are available.
+    ///
+    /// The engine's own version first, then <c>latest</c>. The two numbers drift apart — the engine is
+    /// released more often than an image that takes two hours to build — and a tag that does not exist would
+    /// look exactly like Docker being absent, which is a hard bug report to read.</summary>
     public static (string Docker, string Image)? Container(string engineVersion)
     {
         if (Native || Docker is not string docker) return null;
-        var image = Image(engineVersion);
-        return ImageIsPresent(docker, image) ? (docker, image) : null;
+        if (Environment.GetEnvironmentVariable("TREELEVEL_MC_IMAGE") is string set && set.Trim().Length > 0)
+            return ImageIsPresent(docker, set.Trim()) ? (docker, set.Trim()) : null;
+        foreach (var image in new[] { Repository + ":" + engineVersion, Repository + ":latest" })
+            if (ImageIsPresent(docker, image)) return (docker, image);
+        return null;
     }
 
     /// <summary>What the engine inside the image reports, asked for by running it.</summary>
@@ -246,6 +263,16 @@ public static class Installation
             return (p.ExitCode, output);
         }
         catch (Exception) { return (127, ""); }
+    }
+
+    /// <summary>The first version number in what a program answers: « Herwig 7.3.0 » gives 7, « Sherpa
+    /// version 3.0.5 (Erebus) » gives 3. A generator of the wrong generation understands nothing of what the
+    /// engine writes — the YAML meant for Sherpa 3 is meaningless to a Sherpa 2 — and the refusal would come
+    /// in the middle of a job, with a message nobody can read.</summary>
+    static int? MajorVersion(string text)
+    {
+        var m = System.Text.RegularExpressions.Regex.Match(text, @"(?<![\d.])(\d+)\.\d+");
+        return m.Success && int.TryParse(m.Groups[1].Value, out int v) ? v : null;
     }
 
     /// <summary>Version string of a program, or null when it is missing or broken.</summary>
@@ -300,14 +327,18 @@ public static class Installation
         {
             // A broken installation (a missing library after a distribution upgrade, say) must not be offered.
             string where = Native ? "" : " (WSL)";
+            // The major version, not just the name: a Sherpa 2 answers to « Sherpa » and reads none of the
+            // YAML the engine writes for a Sherpa 3.
             if (!caps.Generators.Contains(MCJob.Generator.Herwig7)
-                && ShellVersionOf("Herwig --version 2>/dev/null") is string herwig && herwig.ToLowerInvariant().Contains("herwig"))
+                && ShellVersionOf("Herwig --version 2>/dev/null") is string herwig
+                && herwig.ToLowerInvariant().Contains("herwig") && MajorVersion(herwig) == 7)
             {
                 caps.Generators.Add(MCJob.Generator.Herwig7);
                 caps.Versions[MCJob.RawValue(MCJob.Generator.Herwig7)] = herwig + where;
             }
             if (!caps.Generators.Contains(MCJob.Generator.Sherpa3)
-                && ShellVersionOf("Sherpa --version 2>/dev/null | head -1") is string sherpa && sherpa.ToLowerInvariant().Contains("sherpa"))
+                && ShellVersionOf("Sherpa --version 2>/dev/null | head -1") is string sherpa
+                && sherpa.ToLowerInvariant().Contains("sherpa") && MajorVersion(sherpa) == 3)
             {
                 caps.Generators.Add(MCJob.Generator.Sherpa3);
                 caps.Versions[MCJob.RawValue(MCJob.Generator.Sherpa3)] = sherpa + where;
@@ -317,7 +348,8 @@ public static class Installation
         // exist where the engine itself runs on Linux, not through a shell of someone else's.
         if (Native)
         {
-            if (Whizard is string whizard && VersionOf(whizard) is string w && w.ToLowerInvariant().Contains("whizard"))
+            if (Whizard is string whizard && VersionOf(whizard) is string w
+                && w.ToLowerInvariant().Contains("whizard") && MajorVersion(w) == 3)
             {
                 caps.Generators.Add(MCJob.Generator.Whizard3);
                 caps.Versions[MCJob.RawValue(MCJob.Generator.Whizard3)] = w;
