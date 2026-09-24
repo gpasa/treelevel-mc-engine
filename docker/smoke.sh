@@ -41,6 +41,8 @@ essai() {                      # essai <générateur> <modèle> <σ min> <σ max
   if ! docker run --rm --user "$moi" -v "$dossier:/job" "$image" run /job > "$dossier/sortie.txt" 2>&1; then
     printf '%-12s ÉCHEC — le moteur a rendu un code non nul\n' "$generateur"
     tail -3 "$dossier/sortie.txt" | sed 's/^/             /'
+    # Le journal du générateur dit ce que le moteur ne fait que rapporter.
+    [ -f "$dossier/engine.log" ] && tail -15 "$dossier/engine.log" | sed 's/^/        log: /'
     echecs=$((echecs + 1)); return
   fi
   etat=$(lire "$dossier/status.json" state)
