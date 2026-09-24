@@ -96,7 +96,7 @@ enum Installation {
     static func image(engineVersion: String) -> String {
         if let set = ProcessInfo.processInfo.environment["TREELEVEL_MC_IMAGE"]?
             .trimmingCharacters(in: .whitespacesAndNewlines), !set.isEmpty { return set }
-        return "ghcr.io/gpasa/treelevel-mc-engine:" + engineVersion
+        return "ghcr.io/gpasa/treelevel-tools:" + engineVersion
     }
 
     /// Docker — ou Podman —, mais seulement quand son démon répond. L'application s'installe longtemps avant
@@ -130,6 +130,10 @@ enum Installation {
         // présente pour un chiffre serait absurde. Un réglage explicite, lui, n'est pas contourné.
         var tags = [image(engineVersion: engineVersion)]
         if ProcessInfo.processInfo.environment["TREELEVEL_MC_IMAGE"] == nil {
+            tags.append("ghcr.io/gpasa/treelevel-tools:latest")
+            // L'image s'est appelée « treelevel-mc-engine » jusqu'à l'arrivée de Delphes, qui n'est pas un
+            // générateur. Celui qui l'a déjà tirée sous ce nom-là n'a pas à la retirer.
+            tags.append("ghcr.io/gpasa/treelevel-mc-engine:" + engineVersion)
             tags.append("ghcr.io/gpasa/treelevel-mc-engine:latest")
         }
         for tag in tags where imageIsPresent(docker, tag) { return (docker, tag) }

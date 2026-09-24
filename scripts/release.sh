@@ -11,7 +11,6 @@
 #   • a "Developer ID Application" certificate in the keychain (Xcode › Settings › Accounts › Manage Certificates)
 #   • notarisation credentials:  xcrun notarytool store-credentials "TreeLevelMC" \
 #         --apple-id <apple id> --team-id 9LVGAJ594U --password <app-specific password>
-#   • for --upload: GITLAB_PROJECT (e.g. pasahome/treelevel-mc-engine) and GITLAB_TOKEN in the environment.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
@@ -72,6 +71,23 @@ APP="$OUT/TreeLevel MC Engine.app"
 cp -R "$APP_SRC" "$APP"
 cp .build/release/treelevel-mc "$APP/Contents/MacOS/treelevel-mc"
 
+# --- Modules -----------------------------------------------------------------
+# L'utilisateur n'installe qu'une application : les générateurs voyagent dedans. Ils ont été rendus
+# relogeables et signés par scripts/package_module.sh, qui a aussi vérifié qu'aucun chemin de cette
+# machine ne les accompagne.
+MODULES_SRC="build/modules/stage"
+if [ -d "$MODULES_SRC" ]; then
+  say "Modules embarqués"
+  mkdir -p "$APP/Contents/Resources/Modules"
+  for module in "$MODULES_SRC"/*/; do
+    name=$(basename "$module")
+    rsync -a "$module" "$APP/Contents/Resources/Modules/$name/"
+    echo "  $name ($(du -sh "$module" | cut -f1))"
+  done
+else
+  echo "  (aucun module : scripts/package_module.sh n'a pas tourné)"
+fi
+
 # --- Sign -------------------------------------------------------------------
 # Nested binaries first, then the bundle; hardened runtime and a secure timestamp, both required for notarisation.
 say "Signature"
@@ -79,6 +95,8 @@ find "$APP/Contents/MacOS" -type f -perm +111 -print0 | while IFS= read -r -d ''
   [ "$binary" = "$APP/Contents/MacOS/TreeLevel MC Engine" ] && continue
   codesign --force --timestamp --options runtime --sign "$IDENTITY" "$binary"
 done
+# Les modules sont déjà signés — CalcHEP avec sa dérogation de validation de bibliothèques, que
+# --force écraserait : ne toucher qu'à ce qui ne l'est pas encore.
 codesign --force --timestamp --options runtime --sign "$IDENTITY" "$APP"
 codesign --verify --strict --verbose=1 "$APP"
 
@@ -129,19 +147,12 @@ NOTES
 say "Prêt"
 ls -lh "$OUT" | sed 's/^/  /'
 
-# --- Optional: publish on GitLab ---------------------------------------------
+# --- Optional: publish on GitHub ---------------------------------------------
+# Le dépôt public est https://github.com/gpasa/treelevel-tools ; `gh` doit être authentifié.
 if [ "$UPLOAD" = 1 ]; then
-  : "${GITLAB_PROJECT:?set GITLAB_PROJECT, e.g. pasahome/treelevel-mc-engine}"
-  : "${GITLAB_TOKEN:?set GITLAB_TOKEN (a project token with api scope)}"
-  say "Publication sur GitLab"
-  ID=$(printf '%s' "$GITLAB_PROJECT" | /usr/bin/sed 's|/|%2F|g')
-  LINKS=""
-  for file in "$DMG" "$OUT/SHA256SUMS.txt"; do
-    URL=$(curl -sf --header "PRIVATE-TOKEN: $GITLAB_TOKEN" --form "file=@$file" \
-          "https://gitlab.com/api/v4/projects/$ID/uploads" | /usr/bin/python3 -c 'import json,sys; print(json.load(sys.stdin)["full_path"])')
-    LINKS="$LINKS{\"name\":\"$(basename "$file")\",\"url\":\"https://gitlab.com$URL\"},"
-  done
-  curl -sf --header "PRIVATE-TOKEN: $GITLAB_TOKEN" --header "Content-Type: application/json" \
-       --data "{\"name\":\"$VERSION\",\"tag_name\":\"v$VERSION\",\"ref\":\"$(git rev-parse HEAD)\",\"description\":$(/usr/bin/python3 -c 'import json,sys; print(json.dumps(open(sys.argv[1]).read()))' "$OUT/release-notes.md"),\"assets\":{\"links\":[${LINKS%,}]}}" \
-       "https://gitlab.com/api/v4/projects/$ID/releases" >/dev/null && echo "  release v$VERSION créée"
+  say "Publication"
+  command -v gh >/dev/null || { echo "gh n'est pas installé" >&2; exit 1; }
+  gh release create "v$VERSION" --title "TreeLevel MC Engine $VERSION" \
+     --notes-file "$OUT/release-notes.md" "$OUT"/*.dmg "$OUT"/*.zip "$OUT/SHA256SUMS.txt" \
+     && echo "  release v$VERSION créée"
 fi

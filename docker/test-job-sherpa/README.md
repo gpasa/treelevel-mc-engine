@@ -4,7 +4,7 @@ Sherpa ne lit pas les événements de TreeLevel : il calcule lui-même son élé
 le processus — c'est `hardProcess`, et il n'y a pas de `events.lhe` ici.
 
 ```bash
-docker run --rm -v "$PWD:/job" ghcr.io/gpasa/treelevel-mc-engine:0.2.0 run /job
+docker run --rm -v "$PWD:/job" ghcr.io/gpasa/treelevel-tools:0.2.0 run /job
 cat status.json
 ```
 

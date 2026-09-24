@@ -4,7 +4,7 @@ Deux cents événements e⁻e⁺ → b b̄ à 200 GeV écrits par TreeLevel (σ 
 à Herwig de les gerber. De quoi vérifier une image en une commande :
 
 ```bash
-docker run --rm -v "$PWD:/job" ghcr.io/gpasa/treelevel-mc-engine:0.2.0 run /job
+docker run --rm -v "$PWD:/job" ghcr.io/gpasa/treelevel-tools:0.2.0 run /job
 cat status.json
 ```
 

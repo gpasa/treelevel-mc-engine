@@ -1,5 +1,5 @@
 # Builds the container image that carries Herwig 7 and Sherpa 3, for the two architectures TreeLevel runs on,
-# and publishes it as ghcr.io/<owner>/treelevel-mc-engine.
+# and publishes it as ghcr.io/<owner>/treelevel-tools.
 #
 # Each architecture is built on a runner of that architecture — no emulation: Herwig's bootstrap takes an hour
 # or two natively and the best part of a day under qemu. The two results are then joined into one tag, so that
@@ -18,7 +18,7 @@ on:
 
 env:
   REGISTRY: ghcr.io
-  IMAGE: ${{ github.repository_owner }}/treelevel-mc-engine
+  IMAGE: ${{ github.repository_owner }}/treelevel-tools
 
 jobs:
   build:

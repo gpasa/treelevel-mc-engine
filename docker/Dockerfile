@@ -4,7 +4,7 @@
 # events. The image carries them ready to run, together with the engine itself, so that TreeLevel only has to
 # hand over a job folder:
 #
-#   docker run --rm -v "<job folder>:/job" ghcr.io/gpasa/treelevel-mc-engine:<version> run /job
+#   docker run --rm -v "<job folder>:/job" ghcr.io/gpasa/treelevel-tools:<version> run /job
 #
 # The engine inside reads /job/job.json exactly as it does on the host, and writes status.json, engine.log and
 # events.hepmc back into the same folder — the bind mount is the whole protocol.
@@ -212,5 +212,5 @@ CMD ["capabilities"]
 
 LABEL org.opencontainers.image.title="TreeLevel MC Engine" \
       org.opencontainers.image.description="Herwig 7 and Sherpa 3, ready to shower the events of TreeLevel" \
-      org.opencontainers.image.source="https://github.com/gpasa/treelevel-mc-engine" \
+      org.opencontainers.image.source="https://github.com/gpasa/treelevel-tools" \
       org.opencontainers.image.licenses="GPL-3.0-or-later"

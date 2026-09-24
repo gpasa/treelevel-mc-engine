@@ -57,7 +57,7 @@ L'image qui porte les cinq générateurs pour Windows tourne aussi bien sur un M
 servir. Pour qui a déjà Docker, c'est une commande au lieu d'une série de compilations :
 
 ```bash
-docker pull ghcr.io/gpasa/treelevel-mc-engine:latest
+docker pull ghcr.io/gpasa/treelevel-tools:latest
 ```
 
 Le moteur regarde si l'image est **déjà** présente (`docker image inspect`) — il ne la tire jamais de

@@ -1,7 +1,7 @@
 #!/bin/sh
 # Éprouve une image : les six générateurs, un vrai travail pour chacun, et la section efficace qu'il rend.
 #
-#   docker/smoke.sh ghcr.io/gpasa/treelevel-mc-engine:0.2.0
+#   docker/smoke.sh ghcr.io/gpasa/treelevel-tools:0.2.0
 #
 # La CI le lance sur un runner de chaque architecture, et il se lance aussi bien à la main — c'est la même
 # suite des deux côtés, ce qui évite qu'elles divergent. Rien n'est écrit dans le dépôt : chaque travail part

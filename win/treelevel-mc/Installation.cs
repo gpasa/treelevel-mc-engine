@@ -190,7 +190,7 @@ public static class Installation
     // Herwig and Sherpa without WSL: the container image, which carries them ready to run
 
     /// <summary>Where the image lives, without its tag.</summary>
-    public const string Repository = "ghcr.io/gpasa/treelevel-mc-engine";
+    public const string Repository = "ghcr.io/gpasa/treelevel-tools";
 
     /// <summary>The image that carries the generators, as it should be named when telling someone to fetch
     /// it. TREELEVEL_MC_IMAGE overrides it, for a local build or a mirror.</summary>
