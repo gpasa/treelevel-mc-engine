@@ -115,7 +115,11 @@ public:
     out << "E " << number << " " << vertices.size() << " " << n << "\n";
     out << "U GEV MM\n";
     out << "W " << number_(weight) << "\n";
-    if (number == 0) {
+    {
+      // Every event carries the cross section as it stands after it, which is what HepMC3 asks for and what
+      // a reader that keeps the last one needs. Writing it once, on the first event, was enough as long as
+      // Pythia only dressed events whose cross section came fixed from the Les Houches file; in collider
+      // mode it integrates as it goes, and the estimate after one event is not the answer.
       // With Les Houches input Pythia reports the file's cross section and no useful error: write 0 rather
       // than an error as large as the value itself.
       const double error = (errorPb > 0 && errorPb < crossSectionPb) ? errorPb : 0.0;
