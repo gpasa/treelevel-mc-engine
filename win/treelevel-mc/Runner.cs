@@ -29,7 +29,7 @@ public sealed class Runner
         var status = new MCStatus(MCStatus.State.Running, job.Id) { Number = number, Started = start, Message = "préparation" };
         Publish(status);
         // A generator that computes its own matrix elements is given a process, not events.
-        if (MCJob.ReadsLesHouches(job.UseGenerator) && !File.Exists(folder.InputPath(job)))
+        if (MCJob.ReadsLesHouches(job.UseGenerator) && !job.IsCollider && !File.Exists(folder.InputPath(job)))
             return Failed($"the job has no input file ({job.Input})", start);
         try
         {
@@ -79,8 +79,12 @@ public sealed class Runner
         // The generator runs with the job folder as its working directory and is given relative names: Pythia
         // reads `Beams:LHEF` as a single word, so a path with spaces would be cut short.
         var settings = new StringBuilder();
-        settings.Append("Beams:frameType = 4\n");
-        settings.Append($"Beams:LHEF = {job.Input}\n");
+        if (job.IsCollider) settings.Append(ColliderBeams(job.HardProcess!));
+        else
+        {
+            settings.Append("Beams:frameType = 4\n");
+            settings.Append($"Beams:LHEF = {job.Input}\n");
+        }
         settings.Append($"Main:numberOfEvents = {job.Events}\n");
         settings.Append("Random:setSeed = on\n");
         settings.Append($"Random:seed = {job.Seed % 900_000_000}\n");
@@ -99,6 +103,50 @@ public sealed class Runner
         if (Installation.PythiaData is string data) environment["PYTHIA8DATA"] = data;
         string version = Installation.Capabilities(engineVersion).Versions.TryGetValue("pythia8", out var v) ? v : "Pythia 8";
         return RunProcess(driver, new[] { "--config", "pythia.cmnd", "--out", job.Output }, start, version, environment: environment);
+    }
+
+    /// <summary>A collider run: the beams, their energy, and the processes those beams can start. No final
+    /// state is imposed — the whole point is to see what comes out, and in what proportion.
+    ///
+    /// The switches are chosen to be the smallest set that shows the variety honestly. On a lepton machine,
+    /// the single boson covers everything below the pair thresholds — muons, taus, every quark flavour, and
+    /// the resonance when the energy sits on it — and the double boson adds the W and Z pairs, which turn
+    /// themselves on when the energy allows and stay quiet when it does not. Nothing here needs to know where
+    /// the thresholds are: Pythia works that out from the energy.</summary>
+    static string ColliderBeams(MCProcess p)
+    {
+        var s = new StringBuilder();
+        bool asymmetric = p.BeamEnergies.Length == 2 && Math.Abs(p.BeamEnergies[0] - p.BeamEnergies[1]) > 1e-9;
+        if (asymmetric)
+        {
+            s.Append("Beams:frameType = 2\n");
+            s.Append($"Beams:eA = {N(p.BeamEnergies[0])}\n");
+            s.Append($"Beams:eB = {N(p.BeamEnergies[1])}\n");
+        }
+        else
+        {
+            s.Append("Beams:frameType = 1\n");
+            s.Append($"Beams:eCM = {N(p.CentreOfMassEnergy)}\n");
+        }
+        s.Append($"Beams:idA = {p.Beams[0]}\n");
+        s.Append($"Beams:idB = {p.Beams[1]}\n");
+
+        bool hadrons = p.Beams.All(b => Math.Abs(b) > 100);
+        if (hadrons)
+        {
+            // A hadron machine produces mostly soft scattering; asking for the hard processes alone, above a
+            // transverse momentum, is what makes the sample interesting rather than enormous.
+            s.Append("HardQCD:all = on\n");
+            s.Append($"PhaseSpace:pTHatMin = {N(p.MinimumPT ?? 20)}\n");
+        }
+        else
+        {
+            s.Append("WeakSingleBoson:ffbar2gmZ = on\n");
+            s.Append("WeakDoubleBoson:ffbar2WW = on\n");
+            s.Append("WeakDoubleBoson:ffbar2gmZgmZ = on\n");
+            if (p.MinimumPT is double pt) s.Append($"PhaseSpace:pTHatMin = {N(pt)}\n");
+        }
+        return s.ToString();
     }
 
     /// <summary>Herwig 7: written as a <c>.in</c> file, then <c>Herwig read</c> and <c>Herwig run</c>. On

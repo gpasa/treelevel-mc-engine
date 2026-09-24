@@ -72,6 +72,12 @@ public sealed class MCJob
     /// <summary>Whether the generator starts from the events TreeLevel wrote, or computes the process itself.</summary>
     public static bool ReadsLesHouches(Generator g) => g is Generator.Pythia8 or Generator.Herwig7 or Generator.Passthrough;
 
+    /// <summary>A collider run: beams and an energy, and no final state at all — the generator produces
+    /// whatever those beams produce, in the proportions it computes. TreeLevel then counts, among that
+    /// mixture, the events that look like the process it drew, which is how a cross section is measured
+    /// rather than calculated.</summary>
+    public bool IsCollider => HardProcess is MCProcess p && p.Beams.Length == 2 && p.FinalState.Length == 0;
+
     public int ProtocolVersion { get; set; } = MCEngineProtocol.Version;
     public string Id { get; set; } = Guid.NewGuid().ToString();
     [JsonPropertyName("generator")]
