@@ -63,6 +63,7 @@ struct Runner {
 
     /// Pythia 8 through our small driver, which reads the LHE file and writes HepMC3.
     private func pythia(start: Date) throws -> Bool {
+        if let result = containerIfNotNative(start) { return result }
         guard let driver = Installation.pythiaDriver else {
             return finish(failed: "the Pythia 8 module is not installed", start: start)
         }
@@ -88,11 +89,13 @@ struct Runner {
         let config = folder.url.appendingPathComponent("pythia.cmnd")
         try settings.write(to: config, atomically: true, encoding: .utf8)
         return try runProcess(driver, ["--config", config.lastPathComponent, "--out", job.output], start: start,
-                              name: "Pythia 8 " + (Installation.capabilities(engineVersion: engineVersion).versions["pythia8"] ?? ""))
+                              name: "Pythia 8 " + (Installation.capabilities(engineVersion: engineVersion).versions["pythia8"] ?? ""),
+                              environment: ModuleSetup.pythiaEnvironment(driver: driver))
     }
 
     /// Herwig 7: written as a `.in` file, then `Herwig read` and `Herwig run`.
     private func herwig(start: Date) throws -> Bool {
+        if let result = containerIfNotNative(start) { return result }
         guard let herwig = Installation.herwig else {
             return finish(failed: "the Herwig 7 module is not installed", start: start)
         }
@@ -130,13 +133,24 @@ struct Runner {
         """
         try input.write(to: folder.url.appendingPathComponent("\(name).in"), atomically: true, encoding: .utf8)
         let version = Installation.capabilities(engineVersion: engineVersion).versions["herwig7"] ?? "Herwig 7"
-        guard try runProcess(herwig, ["read", "\(name).in"], start: start, name: version, step: "lecture de la configuration", finishNow: false) else { return false }
-        return try runProcess(herwig, ["run", "\(name).run", "-N", "\(job.events)"], start: start, name: version)
+        // A module shipped inside the application carries paths from the machine that built it: its
+        // repository is rebuilt here, once, and the search paths are named explicitly.
+        let module = herwig.deletingLastPathComponent().deletingLastPathComponent()
+        var extra = ModuleSetup.searchPaths(module: module)
+        if let repository = ModuleSetup.herwigRepository(module: module, log: { self.append(toLog: $0) }) {
+            extra += ["--repo", repository.path, "-I", module.appendingPathComponent("share/Herwig").path]
+        }
+        let environment = ModuleSetup.environment(module: module)
+        guard try runProcess(herwig, ["read", "\(name).in"] + extra, start: start, name: version,
+                             step: "lecture de la configuration", finishNow: false, environment: environment) else { return false }
+        return try runProcess(herwig, ["run", "\(name).run", "-N", "\(job.events)"] + extra, start: start,
+                              name: version, environment: environment)
     }
 
     /// Sherpa 3: it has no Les Houches reader, so it is given the process itself, as a YAML run card.
     /// It computes the matrix element (Comix), showers, hadronises and writes the HepMC3 itself.
     private func sherpa(start: Date) throws -> Bool {
+        if let result = containerIfNotNative(start) { return result }
         guard let sherpa = Installation.sherpa else {
             return finish(failed: "the Sherpa 3 module is not installed", start: start)
         }
@@ -173,6 +187,7 @@ struct Runner {
     /// WHIZARD 3: a Sindarin script. O'Mega writes the matrix element in Fortran and compiles it on the
     /// spot, so the first run of a new process pays a few seconds of compiler before generating anything.
     private func whizard(start: Date) throws -> Bool {
+        if let result = containerIfNotNative(start) { return result }
         guard let whizard = Installation.whizard else {
             return finish(failed: "the WHIZARD 3 module is not installed", start: start)
         }
@@ -233,6 +248,7 @@ struct Runner {
     /// in a working copy of its tree, made by `mkWORKdir`, and leaves Les Houches events behind, which we
     /// turn into HepMC3 exactly as the passthrough backend does.
     private func calchep(start: Date) throws -> Bool {
+        if let result = containerIfNotNative(start) { return result }
         guard let root = Installation.calchep else {
             return finish(failed: "the CalcHEP 3 module is not installed", start: start)
         }
@@ -307,15 +323,25 @@ struct Runner {
 
     /// Starts a program in the job folder, streams its output into engine.log, and updates the status from the
     /// lines that mention a number of events.
+    /// Adds a line to the job's log, for the steps that happen outside a generator's own output.
+    private func append(toLog message: String) {
+        guard let handle = try? FileHandle(forWritingTo: folder.logURL) ?? nil else {
+            try? (message + "\n").write(to: folder.logURL, atomically: true, encoding: .utf8); return
+        }
+        handle.seekToEndOfFile()
+        handle.write(Data((message + "\n").utf8))
+        try? handle.close()
+    }
+
     private func runProcess(_ url: URL, _ arguments: [String], start: Date, name: String,
                             step: String? = nil, workingDirectory: URL? = nil, finishNow: Bool = true,
                             crossSection: ((String) -> (Double, Double)?)? = nil,
-                            standardOutput: URL? = nil) throws -> Bool {
+                            standardOutput: URL? = nil, environment givenEnvironment: [String: String]? = nil) throws -> Bool {
         let process = Process()
         process.executableURL = url
         process.arguments = arguments
         process.currentDirectoryURL = workingDirectory ?? folder.url
-        var environment = ProcessInfo.processInfo.environment
+        var environment = givenEnvironment ?? ProcessInfo.processInfo.environment
         environment["TREELEVEL_JOB"] = job.id
         // A module's plugins ask for @rpath/libHepMC3, and the rpath they were linked with is the build
         // machine's. Ours is beside the program, so name it here rather than rewriting the binaries.
@@ -389,6 +415,59 @@ struct Runner {
         }
         publish(done)
         return true
+    }
+
+
+
+    /// Passe la main au conteneur quand ce générateur-ci n'est pas disponible nativement — soit qu'aucun
+    /// module ne soit installé, soit que celui qui l'est ne réponde pas. Le critère est exactement celui de
+    /// `nativeCapabilities` : ce que TreeLevel voit dans la liste est ce qui tournera.
+    private func containerIfNotNative(_ start: Date) -> Bool? {
+        guard !Installation.nativeCapabilities(engineVersion: engineVersion).generators.contains(job.generator),
+              let container = Installation.container(engineVersion: engineVersion) else { return nil }
+        return inContainer(container, start: start)
+    }
+
+    /// Le même travail, mené par le moteur qui tourne dans l'image. Le dossier est monté tel quel : rien
+    /// n'est copié ni converti, le montage *est* le protocole, et le conteneur écrit lui-même sa progression
+    /// dans le `status.json` que TreeLevel relit.
+    ///
+    /// C'est la seconde manière d'avoir les générateurs sur un Mac — celle de qui a déjà Docker et préfère
+    /// ne pas installer une seconde fois sept cents mégaoctets de binaires. Les modules natifs restent
+    /// prioritaires : ils tournent sans machine virtuelle.
+    private func inContainer(_ container: (docker: URL, image: String), start: Date) -> Bool {
+        var running = MCStatus(state: .running, jobID: job.id)
+        running.number = number
+        running.started = start
+        running.message = "conteneur"
+        running.generatorVersion = job.generator.label
+        publish(running)
+
+        let process = Process()
+        process.executableURL = container.docker
+        process.arguments = ["run", "--rm", "-v", folder.url.path + ":/job", container.image, "run", "/job"]
+        process.currentDirectoryURL = folder.url
+        let pipe = Pipe()
+        process.standardOutput = pipe
+        process.standardError = pipe
+        do { try process.run() } catch {
+            return finish(failed: "cannot start \(container.docker.lastPathComponent): \(error.localizedDescription)",
+                          start: start)
+        }
+        // On vide le tuyau : un conteneur qui écrit beaucoup se bloquerait sur un tuyau plein. Son vrai
+        // journal est celui qu'il écrit de l'intérieur, dans le dossier de travail.
+        let output = String(decoding: pipe.fileHandleForReading.readDataToEndOfFile(), as: UTF8.self)
+        process.waitUntilExit()
+
+        let status = folder.readStatus()
+        if process.terminationStatus == 0, status?.state == .finished { return true }
+        if status?.state == .failed, let message = status?.message, !message.isEmpty {
+            return finish(failed: message, start: start)
+        }
+        let reason = output.split(separator: "\n").map { $0.trimmingCharacters(in: .whitespaces) }
+                           .first(where: { !$0.isEmpty })
+        return finish(failed: "the container stopped with code \(process.terminationStatus)"
+                              + (reason.map { " — " + $0 } ?? ""), start: start)
     }
 
     private func finish(failed message: String, start: Date) -> Bool {

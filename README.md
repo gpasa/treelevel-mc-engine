@@ -51,6 +51,46 @@ scripts/release.sh      # construit, signe, notarise et fabrique le .dmg à dist
 3. Lancer l'application une fois : elle écrit `capabilities.json` dans son dossier de support, et TreeLevel
    propose alors les générateurs trouvés.
 
+### L'autre voie : le conteneur
+
+L'image qui porte les cinq générateurs pour Windows tourne aussi bien sur un Mac, et le moteur sait s'en
+servir. Pour qui a déjà Docker, c'est une commande au lieu d'une série de compilations :
+
+```bash
+docker pull ghcr.io/gpasa/treelevel-mc-engine:latest
+```
+
+Le moteur regarde si l'image est **déjà** présente (`docker image inspect`) — il ne la tire jamais de
+lui-même : un gigaoctet ne se télécharge pas dans le dos de quelqu'un. Quand elle est là, les générateurs
+qu'aucun module n'offre apparaissent dans `capabilities` suivis de « (conteneur) », et un travail qui les
+demande est mené par le moteur de l'image, avec le dossier de travail monté tel quel :
+
+```
+docker run --rm -v <dossier de travail>:/job <image> run /job
+```
+
+Rien n'est copié ni converti : le montage *est* le protocole, et le conteneur écrit lui-même son
+`status.json` dans le dossier que TreeLevel relit. Docker Desktop partage `/Users` par défaut, donc le
+dossier de travail — qui vit dans le bac à sable de TreeLevel — est monté sans réglage particulier.
+
+**Les modules installés restent prioritaires** : ils tournent nativement, sans machine virtuelle, et
+n'imposent pas que Docker soit démarré. Le conteneur ne prend la main que pour un générateur qui manque —
+ou dont l'installation ne répond pas.
+
+Deux mesures sur ce Mac, e⁻e⁺ → b b̄ à 200 GeV, 200 événements gerbés et hadronisés par Herwig :
+
+| | |
+|---|---|
+| modules natifs | 3,0 s |
+| conteneur | 1,0 s |
+
+Le conteneur est plus rapide, ce qui surprend jusqu'à ce qu'on se rappelle que ses binaires sont ceux d'une
+distribution Linux construite pour elle-même, là où les nôtres sortent d'une compilation croisée sous
+MacPorts. La σ est la même à la neuvième décimale.
+
+`TREELEVEL_MC_IMAGE` remplace l'image, le temps d'essayer une construction locale. Sans ce réglage, le
+moteur cherche l'étiquette de sa propre version, puis `latest`.
+
 ## En ligne de commande
 
 ```bash
