@@ -17,7 +17,8 @@ set -eu
 image="${1:?usage: smoke.sh <image>}"
 ici=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 travail=$(mktemp -d)
-trap 'rm -rf "$travail"' EXIT
+trap 'rm -rf "$travail" 2>/dev/null || true' EXIT
+moi="$(id -u):$(id -g)"
 echecs=0
 
 lire() {                       # lire <fichier> <clé>  → la valeur JSON, sans dépendre de jq
@@ -34,7 +35,10 @@ essai() {                      # essai <générateur> <modèle> <σ min> <σ max
   sed "s/\"generator\"[[:space:]]*:[[:space:]]*\"[a-z0-9]*\"/\"generator\" : \"$generateur\"/" \
       "$dossier/job.json" > "$dossier/job.tmp" && mv "$dossier/job.tmp" "$dossier/job.json"
 
-  if ! docker run --rm -v "$dossier:/job" "$image" run /job > "$dossier/sortie.txt" 2>&1; then
+  # Sous l'identité de l'appelant : sans cela le conteneur écrit en root dans le dossier monté, et sur un
+  # vrai Linux l'utilisateur ne peut plus effacer ce qui en sort. C'est aussi la configuration que le README
+  # recommande, donc celle qu'il faut éprouver.
+  if ! docker run --rm --user "$moi" -v "$dossier:/job" "$image" run /job > "$dossier/sortie.txt" 2>&1; then
     printf '%-12s ÉCHEC — le moteur a rendu un code non nul\n' "$generateur"
     tail -3 "$dossier/sortie.txt" | sed 's/^/             /'
     echecs=$((echecs + 1)); return

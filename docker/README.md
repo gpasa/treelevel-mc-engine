@@ -132,3 +132,16 @@ qui subsiste, −1,4 %, tient à la masse courante du quark b, à la largeur du 
 
 À l'arbre, aucun des deux n'a tort : la différence est un effet d'ordre supérieur, que les corrections
 radiatives resserreraient. Mais qui compare sans le savoir croira à une erreur — d'où ce paragraphe.
+
+## Sous Linux : lancez le conteneur sous votre identité
+
+```bash
+docker run --rm --user "$(id -u):$(id -g)" -v "$PWD:/job" ghcr.io/gpasa/treelevel-mc-engine:0.2.0 run /job
+```
+
+Sans `--user`, le conteneur écrit en **root** dans le dossier monté, et vous ne pouvez plus effacer ce qui en
+sort sans `sudo` — CalcHEP, qui déplie tout un arbre de travail, est le plus démonstratif. Docker Desktop, sur
+macOS et sur Windows, masque la chose en traduisant les propriétaires ; un vrai Linux ne la masque pas.
+
+Le moteur en tient compte : privé de dossier personnel accessible en écriture, il range ses quelques fichiers
+de service dans le dossier temporaire au lieu de s'arrêter.

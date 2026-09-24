@@ -17,12 +17,31 @@ public static class Installation
             // Create, not None: on Unix the default only answers when the folder already exists, and a lean
             // image has no ~/.local/share. The empty string it returned then made a relative path, so the
             // support folder was created wherever the engine happened to stand — inside the user's own job.
-            var local = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData,
-                                                  Environment.SpecialFolderOption.Create);
-            var dir = Path.Combine(local, MCEngineProtocol.SupportFolderName);
-            Directory.CreateDirectory(dir);
-            return dir;
+            //
+            // And a fallback, because a container told to run under the caller's own user id — which is how
+            // a Linux user keeps ownership of what comes out — has no writable home at all. What lives here
+            // is a counter and a copy of the capabilities: worth a second choice, not worth stopping for.
+            foreach (var racine in new[] { Local(), Path.GetTempPath() })
+            {
+                if (string.IsNullOrEmpty(racine)) continue;
+                try
+                {
+                    var dir = Path.Combine(racine, MCEngineProtocol.SupportFolderName);
+                    Directory.CreateDirectory(dir);
+                    return dir;
+                }
+                catch (Exception) { }
+            }
+            return Path.GetTempPath();
         }
+    }
+
+    /// <summary>%LocalAppData% on Windows, ~/.local/share on Linux — or nothing at all when there is no home
+    /// to speak of, which is not an error worth an exception here.</summary>
+    static string Local()
+    {
+        try { return Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData, Environment.SpecialFolderOption.Create); }
+        catch (Exception) { return ""; }
     }
 
     public static string ModulesDirectory => Path.Combine(SupportDirectory, "Modules");
