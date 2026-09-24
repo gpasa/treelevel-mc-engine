@@ -63,7 +63,7 @@ jobs:
       # was invisible at build time and obvious at the first run. So it is run here, on a runner of its own
       # architecture, which is the only place where both are exercised natively before anyone downloads them.
       - name: Les six générateurs, un vrai travail chacun
-        run: docker/smoke.sh "$REGISTRY/$IMAGE@${{ steps.build.outputs.digest }}"
+        run: sh docker/smoke.sh "$REGISTRY/$IMAGE@${{ steps.build.outputs.digest }}"
         shell: bash
 
       # The bare hexadecimal, without its "sha256:" prefix: a colon is not allowed in an artifact's file name,
