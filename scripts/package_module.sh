@@ -61,6 +61,11 @@ mkdir -p "$VENDOR"
 
 machos() { find "$1" -type f -perm -u+x -o -type f -name '*.dylib' -o -type f -name '*.so' | sort -u; }
 is_macho() { file -b "$1" 2>/dev/null | grep -q "Mach-O"; }
+# Les dépendances d'un binaire, sans les en-têtes : pour un binaire universel, `otool -L` répète le nom du
+# fichier suivi de « (architecture arm64): » avant chaque tranche, et cette ligne-là n'est pas une
+# bibliothèque. La lire comme telle faisait crier la vérification sur des modules sains.
+deps() { otool -L "$1" 2>/dev/null | tail -n +2 | grep -v ':$' | awk '{print $1}'; }
+rpaths() { otool -l "$1" 2>/dev/null | awk '/LC_RPATH/{r=1} r&&/path /{print $2; r=0}'; }
 
 say "Bibliothèques externes"
 # Fermeture transitive des dépendances hors du système : tout ce qui vient de /opt/local est embarqué.
@@ -76,14 +81,17 @@ collect() {
   local file=$1 dep base found
   for dep in $(otool -L "$file" 2>/dev/null | tail -n +2 | awk '{print $1}'); do
     case "$dep" in
-      /opt/local/*|/usr/local/*|/opt/homebrew/*) take "$dep" ;;
+      /usr/lib/*|/System/*) ;;                     # fournies par le système, elles restent dehors
+      /*) take "$dep" ;;                           # tout autre chemin absolu manquera chez l'utilisateur
       @rpath/*)
         # Une dépendance @rpath que l'arbre ne contient pas se résolvait par un rpath de construction :
         # elle vient d'ailleurs et doit voyager avec nous (Sherpa et libzip, par exemple).
         base=$(basename "$dep")
         found=$(find "$STAGE" -name "$base" -type f -print -quit 2>/dev/null)
         if [ -z "$found" ] && [ ! -f "$VENDOR/$base" ]; then
-          for dir in /opt/local/lib /usr/local/lib /opt/homebrew/lib; do
+          # D'abord là où la construction la trouvait : dans les rpath du fichier, qu'on effacera
+          # plus tard. Sans cela, libHepMC3search part d'un module et manque à l'autre.
+          for dir in $(rpaths "$file" | grep '^/' || true) /opt/local/lib /usr/local/lib /opt/homebrew/lib; do
             [ -f "$dir/$base" ] && { take "$dir/$base"; break; }
           done
         fi ;;
@@ -98,8 +106,6 @@ LIBDIRS=$(for d in $(find "$STAGE" -name '*.dylib' -o -name '*.so' | xargs -n1 d
             echo "$d"
           done)
 LIBDIRS="$VENDOR $LIBDIRS"
-rpaths() { otool -l "$1" 2>/dev/null | awk '/LC_RPATH/{r=1} r&&/path /{print $2; r=0}'; }
-
 fix() {
   local file=$1 dir rel dep base
   dir=$(dirname "$file")
@@ -108,8 +114,8 @@ fix() {
   # binaires n'ont pas été liés avec -headerpad_max_install_names, leur en-tête ne s'étire pas.
   for old_rpath in $(rpaths "$file"); do
     case "$old_rpath" in
-      /opt/local/*|/usr/local/*|/opt/homebrew/*|"$PREFIX"*)
-        install_name_tool -delete_rpath "$old_rpath" "$file" 2>/dev/null || true ;;
+      @*) ;;                                       # relatif au module : c'est ce qu'on veut
+      *) install_name_tool -delete_rpath "$old_rpath" "$file" 2>/dev/null || true ;;
     esac
   done
   # Un rpath par dossier de bibliothèques de l'arbre, plus celui des embarquées : une référence
@@ -125,7 +131,8 @@ fix() {
   done
   for dep in $(otool -L "$file" 2>/dev/null | tail -n +2 | awk '{print $1}'); do
     case "$dep" in
-      /opt/local/*|/usr/local/*|/opt/homebrew/*)
+      /usr/lib/*|/System/*) ;;
+      /*)
         base=$(basename "$dep")
         install_name_tool -change "$dep" "@rpath/$base" "$file" 2>/dev/null || true ;;
       "$PREFIX"/*)
@@ -227,6 +234,37 @@ if [ -n "$LEAKS" ]; then
   exit 1
 fi
 echo "  aucun chemin personnel"
+
+# `grep` ne lit que les fichiers texte : il ne voit ni les rpath ni les noms d'installation, qui sont des
+# commandes de chargement. C'est par là qu'un module est parti avec un rpath vers l'arbre d'un *autre* :
+# Sherpa chargeait alors le HepMC3 de Herwig, mourait dans son propre gestionnaire de signal, et rien ne
+# se voyait sur la machine qui avait compilé. On regarde donc aussi les commandes de chargement.
+BAD=""
+for f in $(machos "$STAGE"); do
+  is_macho "$f" || continue
+  for r in $(rpaths "$f"); do
+    case "$r" in @*) ;; *) BAD="$BAD
+  rpath absolu        $r   ($(basename "$f"))" ;; esac
+  done
+  for d in $(deps "$f"); do
+    case "$d" in
+      /usr/lib/*|/System/*|@*) ;;
+      *) BAD="$BAD
+  dépendance absolue  $d   ($(basename "$f"))" ;;
+    esac
+    case "$d" in
+      @rpath/*) base=${d#@rpath/}
+        [ -n "$(find "$STAGE" -name "$base" -type f -print -quit 2>/dev/null)" ] || BAD="$BAD
+  introuvable         $base   (demandée par $(basename "$f"))" ;;
+    esac
+  done
+done
+if [ -n "$BAD" ]; then
+  echo "  ⚠ le module ne se suffit pas à lui-même :" >&2
+  printf '%s\n' "$BAD" | grep -v '^$' | sort -u | head -25 >&2
+  exit 1
+fi
+echo "  aucune dépendance hors du module, aucune manquante"
 
 say "Image disque"
 DMG="$OUT/$NAME-$VERSION-macos-$(uname -m).dmg"
