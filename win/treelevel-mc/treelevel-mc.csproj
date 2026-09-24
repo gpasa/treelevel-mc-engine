@@ -8,7 +8,7 @@
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <InvariantGlobalization>true</InvariantGlobalization>
-    <Version>0.2.0</Version>
+    <Version>0.3.0</Version>
     <Product>TreeLevel MC Engine</Product>
     <Company>Guglielmo Pasa</Company>
     <Copyright>© 2026 Guglielmo Pasa — GPL v3 or later</Copyright>

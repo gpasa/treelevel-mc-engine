@@ -15,7 +15,7 @@ ne passe par le réseau.
 ## Pour l'utilisateur
 
 ```powershell
-docker pull ghcr.io/gpasa/treelevel-mc-engine:0.2.0
+docker pull ghcr.io/gpasa/treelevel-mc-engine:0.3.0
 ```
 
 C'est tout — TreeLevel voit alors les cinq générateurs apparaître dans sa liste. L'image n'est
@@ -64,7 +64,7 @@ vérifie en une commande, avec le travail d'essai que porte le dépôt :
 
 ```bash
 cd docker/test-job
-docker run --rm -v "$PWD:/job" ghcr.io/gpasa/treelevel-mc-engine:0.2.0 run /job && cat status.json
+docker run --rm -v "$PWD:/job" ghcr.io/gpasa/treelevel-mc-engine:0.3.0 run /job && cat status.json
 ```
 
 Attendu : `state` à `finished`, `eventsWritten` à 200, `crossSection` toujours 3.11399 — le générateur gerbe et
@@ -87,7 +87,7 @@ Distribuer ces binaires oblige à publier les sources correspondantes. Elles le 
 3. le moteur lui-même est dans ce dépôt, sous GPL v3.
 
 ```bash
-docker run --rm --entrypoint cat ghcr.io/gpasa/treelevel-mc-engine:0.2.0 \
+docker run --rm --entrypoint cat ghcr.io/gpasa/treelevel-mc-engine:0.3.0 \
   /opt/treelevel-mc/share/treelevel-mc/SOURCES.txt
 ```
 
@@ -136,7 +136,7 @@ radiatives resserreraient. Mais qui compare sans le savoir croira à une erreur 
 ## Sous Linux : lancez le conteneur sous votre identité
 
 ```bash
-docker run --rm --user "$(id -u):$(id -g)" -v "$PWD:/job" ghcr.io/gpasa/treelevel-mc-engine:0.2.0 run /job
+docker run --rm --user "$(id -u):$(id -g)" -v "$PWD:/job" ghcr.io/gpasa/treelevel-mc-engine:0.3.0 run /job
 ```
 
 Sans `--user`, le conteneur écrit en **root** dans le dossier monté, et vous ne pouvez plus effacer ce qui en

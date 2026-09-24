@@ -13,7 +13,10 @@ using TreeLevel.MC;
 //
 // Copyright (C) 2026 Guglielmo Pasa. GNU General Public License v3 or later.
 
-const string EngineVersion = "0.2.0";
+// La version vient du projet, et de nulle part ailleurs : la CI la lit dans le .csproj pour étiqueter
+// l'image, le moteur y cherche l'image correspondante, et un numéro écrit deux fois finit par différer.
+var assemblee = typeof(Installation).Assembly.GetName().Version;
+string EngineVersion = assemblee is null ? "0" : $"{assemblee.Major}.{assemblee.Minor}.{assemblee.Build}";
 
 Console.OutputEncoding = System.Text.Encoding.UTF8;
 if (args.Length == 0)

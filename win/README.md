@@ -79,7 +79,7 @@ l'exécution de ThePEG, sur autotools et sur du Fortran. Les porter, ce serait m
 amont. Ils tournent donc dans un conteneur Linux, que l'utilisateur récupère d'une commande :
 
 ```powershell
-docker pull ghcr.io/gpasa/treelevel-mc-engine:0.2.0
+docker pull ghcr.io/gpasa/treelevel-mc-engine:0.3.0
 ```
 
 Le moteur qui tourne dans l'image est **le même programme** que celui de Windows, compilé pour Linux : il lit

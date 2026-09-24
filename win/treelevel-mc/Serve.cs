@@ -7,7 +7,7 @@ namespace TreeLevel.MC;
 /// listens on a port and nothing leaves the machine — a job is still a folder, as everywhere else here.
 ///
 /// In the container it needs no special arrangement, the entry point being the engine itself:
-///   docker run -d -v /srv/mcjobs:/jobs ghcr.io/gpasa/treelevel-mc-engine:0.2.0 serve /jobs
+///   docker run -d -v /srv/mcjobs:/jobs ghcr.io/gpasa/treelevel-mc-engine:0.3.0 serve /jobs
 /// </summary>
 public static class Serve
 {
