@@ -265,6 +265,17 @@ public static class Installation
         catch (Exception) { return (127, ""); }
     }
 
+    /// <summary>Where a program was found, when it is not where we put our own — the module folders, or the
+    /// prefix inside the image. A version number that surprises has no visible explanation otherwise: the
+    /// engine looks in the PATH too, and what it finds there is somebody else's build.</summary>
+    static string Origin(string exe)
+    {
+        var dir = Path.GetDirectoryName(Path.GetFullPath(exe)) ?? "";
+        foreach (var notre in new[] { ModulesDirectory, Path.Combine(EngineDirectory, "Modules"), "/opt/treelevel-mc" })
+            if (dir.StartsWith(notre, StringComparison.OrdinalIgnoreCase)) return "";
+        return $" ({dir})";
+    }
+
     /// <summary>The first version number in what a program answers: « Herwig 7.3.0 » gives 7, « Sherpa
     /// version 3.0.5 (Erebus) » gives 3. A generator of the wrong generation understands nothing of what the
     /// engine writes — the YAML meant for Sherpa 3 is meaningless to a Sherpa 2 — and the refusal would come
@@ -308,7 +319,7 @@ public static class Installation
         if (PythiaDriver is string driver && VersionOf(driver) is string pythia)
         {
             caps.Generators.Add(MCJob.Generator.Pythia8);
-            caps.Versions[MCJob.RawValue(MCJob.Generator.Pythia8)] = "Pythia " + pythia;
+            caps.Versions[MCJob.RawValue(MCJob.Generator.Pythia8)] = "Pythia " + pythia + Origin(driver);
         }
         // The image first: on Windows it is the supported way to reach Herwig and Sherpa, and it answers for
         // itself. Nothing is downloaded here — an image that is not on the machine simply offers nothing.
@@ -352,12 +363,12 @@ public static class Installation
                 && w.ToLowerInvariant().Contains("whizard") && MajorVersion(w) == 3)
             {
                 caps.Generators.Add(MCJob.Generator.Whizard3);
-                caps.Versions[MCJob.RawValue(MCJob.Generator.Whizard3)] = w;
+                caps.Versions[MCJob.RawValue(MCJob.Generator.Whizard3)] = w + Origin(whizard);
             }
             if (Calchep is string calchep && CalchepVersion(calchep) is string c)
             {
                 caps.Generators.Add(MCJob.Generator.CalcHep3);
-                caps.Versions[MCJob.RawValue(MCJob.Generator.CalcHep3)] = c;
+                caps.Versions[MCJob.RawValue(MCJob.Generator.CalcHep3)] = c + Origin(Path.Combine(calchep, "calchep_batch"));
             }
         }
         return caps;
