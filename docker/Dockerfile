@@ -210,7 +210,7 @@ WORKDIR /job
 ENTRYPOINT ["/usr/local/bin/treelevel-mc"]
 CMD ["capabilities"]
 
-LABEL org.opencontainers.image.title="TreeLevel MC Engine" \
-      org.opencontainers.image.description="Herwig 7 and Sherpa 3, ready to shower the events of TreeLevel" \
+LABEL org.opencontainers.image.title="TreeLevel Tools" \
+      org.opencontainers.image.description="Pythia 8, Herwig 7, Sherpa 3, WHIZARD 3 and CalcHEP 3, ready to run the events of TreeLevel" \
       org.opencontainers.image.source="https://github.com/gpasa/treelevel-tools" \
       org.opencontainers.image.licenses="GPL-3.0-or-later"
