@@ -162,10 +162,10 @@ enum Installation {
 
     /// L'image qui porte les cinq générateurs, pour qui préfère Docker à l'installation des modules.
     /// TREELEVEL_MC_IMAGE la remplace, le temps d'essayer une construction locale.
-    static func image(engineVersion: String) -> String {
+    static func image() -> String {
         if let set = ProcessInfo.processInfo.environment["TREELEVEL_MC_IMAGE"]?
             .trimmingCharacters(in: .whitespacesAndNewlines), !set.isEmpty { return set }
-        return "ghcr.io/gpasa/treelevel-tools:" + engineVersion
+        return "ghcr.io/gpasa/treelevel-tools:" + MCEngineProtocol.toolsVersion
     }
 
     /// Docker — ou Podman —, mais seulement quand son démon répond. L'application s'installe longtemps avant
@@ -192,17 +192,17 @@ enum Installation {
 
     /// Docker et l'image ensemble. Les modules installés restent prioritaires : ils tournent nativement,
     /// sans machine virtuelle, et n'imposent pas que Docker soit démarré.
-    static func container(engineVersion: String) -> (docker: URL, image: String)? {
+    static func container() -> (docker: URL, image: String)? {
         guard let docker else { return nil }
-        // L'étiquette de la version d'abord, puis « latest » : le moteur et l'image ne changent pas de
-        // version en même temps — celui-ci est en 0.3.0 quand l'image en est à 0.2.0 —, et refuser une image
-        // présente pour un chiffre serait absurde. Un réglage explicite, lui, n'est pas contourné.
-        var tags = [image(engineVersion: engineVersion)]
+        // L'étiquette que le protocole partagé désigne, puis « latest » : refuser une image présente pour un
+        // chiffre serait absurde. Un réglage explicite, lui, n'est pas contourné.
+        let pinned = MCEngineProtocol.toolsVersion
+        var tags = [image()]
         if ProcessInfo.processInfo.environment["TREELEVEL_MC_IMAGE"] == nil {
             tags.append("ghcr.io/gpasa/treelevel-tools:latest")
             // L'image s'est appelée « treelevel-mc-engine » jusqu'à l'arrivée de Delphes, qui n'est pas un
             // générateur. Celui qui l'a déjà tirée sous ce nom-là n'a pas à la retirer.
-            tags.append("ghcr.io/gpasa/treelevel-mc-engine:" + engineVersion)
+            tags.append("ghcr.io/gpasa/treelevel-mc-engine:" + pinned)
             tags.append("ghcr.io/gpasa/treelevel-mc-engine:latest")
         }
         for tag in tags where imageIsPresent(docker, tag) { return (docker, tag) }
@@ -320,7 +320,7 @@ enum Installation {
         var caps = nativeCapabilities(engineVersion: engineVersion)
         guard allowsContainer,
               MCJob.Generator.allCases.contains(where: { !caps.generators.contains($0) }),
-              let container = container(engineVersion: engineVersion),
+              let container = container(),
               let fromImage = imageCapabilities(container.docker, container.image) else { return caps }
         for generator in fromImage.generators where !caps.generators.contains(generator) {
             caps.generators.append(generator)

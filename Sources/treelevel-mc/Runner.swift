@@ -599,7 +599,7 @@ struct Runner {
         // Le conteneur ne se substitue à rien : il ne sert que si l'utilisateur l'a demandé.
         guard Installation.allowsContainer,
               !Installation.nativeCapabilities(engineVersion: engineVersion).generators.contains(job.generator),
-              let container = Installation.container(engineVersion: engineVersion) else { return nil }
+              let container = Installation.container() else { return nil }
         return inContainer(container, start: start)
     }
 

@@ -15,6 +15,17 @@ public enum MCEngineProtocol {
     /// Bumped when the format changes in a way an older engine could not read.
     /// 2: a job may describe a process instead of carrying events, for the generators that compute their own.
     public static let version = 2
+
+    /// La version des outils : le moteur de chaque système et l'image qui porte les générateurs sont une même
+    /// chose sous deux formes, et ils répondent à un seul numéro. Il est écrit ici, dans le fichier que les deux
+    /// plateformes partagent, pour qu'aucune ne puisse demander une image que l'autre ne demanderait pas.
+    ///
+    /// Il se déduisait auparavant de la version de chaque moteur, et macOS s'accrochait alors à une étiquette
+    /// pendant que Windows retombait sur une autre — la même image aujourd'hui, aucune garantie demain. Les deux
+    /// moteurs sont publiés ensemble et portent aussi ce numéro dans leur fichier de projet ; quand il bouge, il
+    /// bouge partout.
+    public static let toolsVersion = "0.3.0"
+
     public static let jobFileName = "job.json"
     public static let inputFileName = "events.lhe"
     public static let statusFileName = "status.json"

@@ -192,11 +192,12 @@ public static class Installation
     /// <summary>Where the image lives, without its tag.</summary>
     public const string Repository = "ghcr.io/gpasa/treelevel-tools";
 
-    /// <summary>The image that carries the generators, as it should be named when telling someone to fetch
-    /// it. TREELEVEL_MC_IMAGE overrides it, for a local build or a mirror.</summary>
-    public static string Image(string engineVersion)
+    /// <summary>The image that carries the generators, as it should be named when telling someone to fetch it.
+    /// Its tag comes from the shared protocol, never from this engine's own version, so that both systems ask for
+    /// the same image. TREELEVEL_MC_IMAGE overrides it, for a local build or a mirror.</summary>
+    public static string Image()
         => Environment.GetEnvironmentVariable("TREELEVEL_MC_IMAGE") is string set && set.Trim().Length > 0
-            ? set.Trim() : Repository + ":" + engineVersion;
+            ? set.Trim() : Repository + ":" + MCEngineProtocol.ToolsVersion;
 
     /// <summary>Docker, but only when its daemon answers: Docker Desktop installs the client long before the
     /// engine can run, and on a machine without virtualisation it never will.</summary>
@@ -221,15 +222,14 @@ public static class Installation
     /// <summary>Docker and the image together, when both are there: this is how Herwig and Sherpa run on
     /// Windows, and it is preferred over WSL when the two are available.
     ///
-    /// The engine's own version first, then <c>latest</c>. The two numbers drift apart — the engine is
-    /// released more often than an image that takes two hours to build — and a tag that does not exist would
-    /// look exactly like Docker being absent, which is a hard bug report to read.</summary>
-    public static (string Docker, string Image)? Container(string engineVersion)
+    /// The tag the shared protocol names first, then <c>latest</c>. Both are tried because a tag that does not
+    /// exist would look exactly like Docker being absent, which is a hard bug report to read.</summary>
+    public static (string Docker, string Image)? Container()
     {
         if (Native || Docker is not string docker) return null;
         if (Environment.GetEnvironmentVariable("TREELEVEL_MC_IMAGE") is string set && set.Trim().Length > 0)
             return ImageIsPresent(docker, set.Trim()) ? (docker, set.Trim()) : null;
-        foreach (var image in new[] { Repository + ":" + engineVersion, Repository + ":latest" })
+        foreach (var image in new[] { Repository + ":" + MCEngineProtocol.ToolsVersion, Repository + ":latest" })
             if (ImageIsPresent(docker, image)) return (docker, image);
         return null;
     }
@@ -323,8 +323,8 @@ public static class Installation
         }
         // The image first: on Windows it is the supported way to reach Herwig and Sherpa, and it answers for
         // itself. Nothing is downloaded here — an image that is not on the machine simply offers nothing.
-        if (!Native && Docker is string docker && ImageIsPresent(docker, Image(engineVersion))
-            && ImageCapabilities(docker, Image(engineVersion)) is MCCapabilities image)
+        if (!Native && Docker is string docker && ImageIsPresent(docker, Image())
+            && ImageCapabilities(docker, Image()) is MCCapabilities image)
         {
             foreach (var generator in image.Generators)
             {

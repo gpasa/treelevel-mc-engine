@@ -73,7 +73,7 @@ public sealed class Runner
         // an image that works, and the job would fail for a reason nobody could guess.
         if (Installation.WorkingPythiaDriver is not string driver)
         {
-            if (Installation.Container(engineVersion) is { } container) return InContainer(container, start);
+            if (Installation.Container() is { } container) return InContainer(container, start);
             return Failed("the Pythia 8 module is not installed", start);
         }
         // The generator runs with the job folder as its working directory and is given relative names: Pythia
@@ -154,7 +154,7 @@ public sealed class Runner
     /// WSL path below is what remains for someone who built Herwig there by hand.</summary>
     bool Herwig(DateTimeOffset start)
     {
-        if (Installation.Container(engineVersion) is { } container) return InContainer(container, start);
+        if (Installation.Container() is { } container) return InContainer(container, start);
         if (Installation.Shell == null) return Failed(Missing("Herwig 7"), start);
         if (Installation.ShellPath(folder.Path) is not string inside)
             return Failed("the job folder is not reachable from the shell that runs Herwig", start);
@@ -204,7 +204,7 @@ public sealed class Runner
     {
         if (job.HardProcess is not MCProcess p || p.Beams.Length != 2 || p.BeamEnergies.Length != 2 || p.FinalState.Length == 0)
             return Failed("Sherpa computes the process itself and needs its description (beams, energies, final state)", start);
-        if (Installation.Container(engineVersion) is { } container) return InContainer(container, start);
+        if (Installation.Container() is { } container) return InContainer(container, start);
         if (Installation.Shell == null) return Failed(Missing("Sherpa 3"), start);
         if (Installation.ShellPath(folder.Path) is not string inside)
             return Failed("the job folder is not reachable from the shell that runs Sherpa", start);
@@ -244,7 +244,7 @@ public sealed class Runner
     {
         if (job.HardProcess is not MCProcess p || p.Beams.Length != 2 || p.BeamEnergies.Length != 2 || p.FinalState.Length == 0)
             return Failed("WHIZARD computes the process itself and needs its description (beams, energies, final state)", start);
-        if (Installation.Container(engineVersion) is { } container) return InContainer(container, start);
+        if (Installation.Container() is { } container) return InContainer(container, start);
         if (Installation.Whizard is not string whizard) return Failed(Missing("WHIZARD 3"), start);
 
         var names = new List<string>();
@@ -308,7 +308,7 @@ public sealed class Runner
     {
         if (job.HardProcess is not MCProcess p || p.Beams.Length != 2 || p.BeamEnergies.Length != 2 || p.FinalState.Length == 0)
             return Failed("CalcHEP computes the process itself and needs its description (beams, energies, final state)", start);
-        if (Installation.Container(engineVersion) is { } container) return InContainer(container, start);
+        if (Installation.Container() is { } container) return InContainer(container, start);
         if (Installation.Calchep is not string root) return Failed(Missing("CalcHEP 3"), start);
 
         var names = new List<string>();

@@ -18,6 +18,16 @@ public static class MCEngineProtocol
     /// <summary>Bumped when the format changes in a way an older engine could not read.
     /// 2: a job may describe a process instead of carrying events, for the generators that compute their own.</summary>
     public const int Version = 2;
+
+    /// <summary>The version of the tools: the engine on each system and the container image that carries the
+    /// generators are one thing under two forms, and they answer to one number. It is written here, in the file
+    /// the two platforms share, so that neither can ask for an image the other would not.
+    ///
+    /// It was derived from each engine's own version before, and that let macOS pin one tag while Windows fell
+    /// back to another — the same image today, and no guarantee tomorrow. Both engines are released together and
+    /// carry this number in their project file too; when it moves, it moves everywhere.</summary>
+    public const string ToolsVersion = "0.3.0";
+
     public const string JobFileName = "job.json";
     public const string InputFileName = "events.lhe";
     public const string StatusFileName = "status.json";
