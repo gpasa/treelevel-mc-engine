@@ -14,7 +14,7 @@ using System.Reflection;
 [assembly: System.Reflection.AssemblyConfigurationAttribute("Release")]
 [assembly: System.Reflection.AssemblyCopyrightAttribute("© 2026 Guglielmo Pasa — GPL v3 or later")]
 [assembly: System.Reflection.AssemblyFileVersionAttribute("0.3.0.0")]
-[assembly: System.Reflection.AssemblyInformationalVersionAttribute("0.3.0+119112b793949a2e1e7d16e2eb7b5ad98f1cc98a")]
+[assembly: System.Reflection.AssemblyInformationalVersionAttribute("0.3.0+ba108e14945af9ab0df4a889cef74e2ead3ef976")]
 [assembly: System.Reflection.AssemblyProductAttribute("TreeLevel Tools")]
 [assembly: System.Reflection.AssemblyTitleAttribute("treelevel-tools")]
 [assembly: System.Reflection.AssemblyVersionAttribute("0.3.0.0")]

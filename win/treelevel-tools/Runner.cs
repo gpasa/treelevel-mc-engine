@@ -33,6 +33,16 @@ public sealed class Runner
             return Failed($"the job has no input file ({job.Input})", start);
         try
         {
+            // Collider mode exists in the Pythia path and nowhere else yet. Handing such a job to Herwig or
+            // Sherpa would not fail: they would compute the exclusive process the final state names — which in
+            // this mode is the signature to look for, not what to produce — and the sample would come back
+            // entirely made of the drawn process. Measuring a cross section on it would then give back the
+            // number one was supposed to be measuring, which is the worst possible answer: wrong, and
+            // convincing. Better to say no.
+            if (job.IsCollider && job.UseGenerator != MCJob.Generator.Pythia8)
+                return Failed($"{MCJob.Label(job.UseGenerator)} cannot yet be run as a collider — only Pythia 8 "
+                            + "opens families of hard channels rather than computing one process. Choose Pythia 8, "
+                            + "or turn the collider off to compute the drawn process with this generator", start);
             return job.UseGenerator switch
             {
                 MCJob.Generator.Passthrough => Passthrough(start),
