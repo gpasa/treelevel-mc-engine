@@ -15,9 +15,9 @@ osascript -e 'tell application id "org.pasahome.TreeLevelMCEngine" to quit' 2>/d
 mkdir -p "$APPS"
 rm -rf "$DEST"
 /usr/bin/ditto "App/build/Build/Products/Release/TreeLevel Tools.app" "$DEST"
-cp .build/release/treelevel-mc "$DEST/Contents/MacOS/treelevel-mc"
+cp .build/release/treelevel-tools "$DEST/Contents/MacOS/treelevel-tools"
 if security find-identity -v -p codesigning | grep -q "Developer ID Application"; then
-  codesign --force --timestamp --options runtime --sign "Developer ID Application" "$DEST/Contents/MacOS/treelevel-mc"
+  codesign --force --timestamp --options runtime --sign "Developer ID Application" "$DEST/Contents/MacOS/treelevel-tools"
   codesign --force --timestamp --options runtime --sign "Developer ID Application" "$DEST"
   codesign --verify --strict "$DEST"
 fi

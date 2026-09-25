@@ -38,7 +38,7 @@ public enum MCEngineProtocol {
     /// s'appelle déjà `treelevel-tools`. Rien n'ayant été publié sous l'ancien nom, il n'en reste aucune
     /// trace à ménager : pas de repli, pas de migration.
     public static let bundleIdentifier = "org.pasahome.TreeLevelTools"
-    public static let urlScheme = "treelevel-mc"
+    public static let urlScheme = "treelevel-tools"
     /// Where the engine publishes what it can do, inside its own support folder.
     public static let capabilitiesFileName = "capabilities.json"
 

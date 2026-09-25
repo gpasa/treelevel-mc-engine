@@ -9,6 +9,6 @@ let package = Package(
     name: "TreeLevelMCEngine",
     platforms: [.macOS(.v13)],
     targets: [
-        .executableTarget(name: "treelevel-mc", path: "Sources/treelevel-mc")
+        .executableTarget(name: "treelevel-tools", path: "Sources/treelevel-tools")
     ]
 )

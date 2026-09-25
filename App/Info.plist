@@ -22,10 +22,10 @@
 	<array>
 		<dict>
 			<key>CFBundleURLName</key>
-			<string>TreeLevel MC job</string>
+			<string>TreeLevel Tools job</string>
 			<key>CFBundleURLSchemes</key>
 			<array>
-				<string>treelevel-mc</string>
+				<string>treelevel-tools</string>
 			</array>
 		</dict>
 	</array>

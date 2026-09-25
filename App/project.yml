@@ -10,7 +10,7 @@ targets:
     platform: macOS
     sources:
       - path: Sources
-      - path: ../Sources/treelevel-mc
+      - path: ../Sources/treelevel-tools
         excludes: ["main.swift"]
     settings:
       base:
@@ -37,8 +37,8 @@ targets:
         LSApplicationCategoryType: public.app-category.education
         NSHumanReadableCopyright: "© 2026 Guglielmo Pasa — GNU GPL v3 or later"
         CFBundleURLTypes:
-          - CFBundleURLName: TreeLevel MC job
-            CFBundleURLSchemes: [treelevel-mc]
+          - CFBundleURLName: TreeLevel Tools job
+            CFBundleURLSchemes: [treelevel-tools]
 schemes:
   TreeLevelMCEngine:
     build:

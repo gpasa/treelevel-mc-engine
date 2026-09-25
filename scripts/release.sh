@@ -46,7 +46,7 @@ command -v xcodegen >/dev/null || { echo "xcodegen is needed to generate the pro
 # --- Version ----------------------------------------------------------------
 if [ -n "$VERSION" ]; then
   /usr/bin/sed -i '' "s/MARKETING_VERSION: \".*\"/MARKETING_VERSION: \"$VERSION\"/" App/project.yml
-  /usr/bin/sed -i '' "s/let engineVersion = \".*\"/let engineVersion = \"$VERSION\"/" Sources/treelevel-mc/main.swift
+  /usr/bin/sed -i '' "s/let engineVersion = \".*\"/let engineVersion = \"$VERSION\"/" Sources/treelevel-tools/main.swift
   /usr/bin/sed -i '' "s/let version = \".*\"/let version = \"$VERSION\"/" App/Sources/EngineApp.swift
 else
   VERSION=$(grep -m1 'MARKETING_VERSION' App/project.yml | sed 's/.*"\(.*\)".*/\1/')
@@ -69,7 +69,7 @@ APP_SRC="App/build/Build/Products/Release/TreeLevel Tools.app"
 [ -d "$APP_SRC" ] || { echo "the application was not built" >&2; exit 1; }
 APP="$OUT/TreeLevel Tools.app"
 cp -R "$APP_SRC" "$APP"
-cp .build/release/treelevel-mc "$APP/Contents/MacOS/treelevel-mc"
+cp .build/release/treelevel-tools "$APP/Contents/MacOS/treelevel-tools"
 
 # --- Modules -----------------------------------------------------------------
 # L'utilisateur n'installe qu'une application : les générateurs voyagent dedans. Ils ont été rendus
