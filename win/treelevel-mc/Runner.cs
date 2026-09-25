@@ -79,7 +79,11 @@ public sealed class Runner
         // The generator runs with the job folder as its working directory and is given relative names: Pythia
         // reads `Beams:LHEF` as a single word, so a path with spaces would be cut short.
         var settings = new StringBuilder();
-        if (job.IsCollider) settings.Append(ColliderBeams(job.HardProcess!));
+        if (job.IsCollider)
+        {
+            if (ColliderObjection(job.HardProcess!) is string objection) return Failed(objection, start);
+            settings.Append(ColliderBeams(job.HardProcess!));
+        }
         else
         {
             settings.Append("Beams:frameType = 4\n");
@@ -105,48 +109,86 @@ public sealed class Runner
         return RunProcess(driver, new[] { "--config", "pythia.cmnd", "--out", job.Output }, start, version, environment: environment);
     }
 
-    /// <summary>A collider run: the beams, their energy, and the processes those beams can start. No final
-    /// state is imposed — the whole point is to see what comes out, and in what proportion.
+    /// <summary>A collider run: the beams, their energy, and the families of hard channels left open. What comes
+    /// out is everything those channels make — the drawn final state among the rest — and the selection happens
+    /// afterwards, in TreeLevel, on the events as they are reconstructed. That is the whole point: a real ring
+    /// cannot be asked for one final state, so the cross section quoted at the end is measured, not requested.
     ///
-    /// The switches are chosen to be the smallest set that shows the variety honestly. On a lepton machine,
-    /// the single boson covers everything below the pair thresholds — muons, taus, every quark flavour, and
-    /// the resonance when the energy sits on it — and the double boson adds the W and Z pairs, which turn
-    /// themselves on when the energy allows and stay quiet when it does not. Nothing here needs to know where
-    /// the thresholds are: Pythia works that out from the energy.</summary>
+    /// These settings are the ones the Mac writes, switch for switch. The two engines read the same job and must
+    /// hand Pythia the same thing, or the same document would give two samples depending on the machine it ran
+    /// on — which is worse than either being wrong, because nothing would say so.</summary>
     static string ColliderBeams(MCProcess p)
     {
+        if (p.Beams.Length != 2 || p.BeamEnergies.Length != 2) return "";
         var s = new StringBuilder();
-        bool asymmetric = p.BeamEnergies.Length == 2 && Math.Abs(p.BeamEnergies[0] - p.BeamEnergies[1]) > 1e-9;
-        if (asymmetric)
+        s.Append($"Beams:idA = {p.Beams[0]}\n");
+        s.Append($"Beams:idB = {p.Beams[1]}\n");
+        if (p.FixedTarget)
         {
-            s.Append("Beams:frameType = 2\n");
-            s.Append($"Beams:eA = {N(p.BeamEnergies[0])}\n");
-            s.Append($"Beams:eB = {N(p.BeamEnergies[1])}\n");
+            // A target at rest is said by its three vanishing components, not by an energy equal to its mass:
+            // give it a number near the mass and it keeps a small momentum, and the collision energy is no
+            // longer quite the one intended. BeamEnergies[0] is then the beam's momentum, and Pythia takes the
+            // target's energy from its own mass table.
+            s.Append("Beams:frameType = 3\n");
+            s.Append($"Beams:pxA = 0\nBeams:pyA = 0\nBeams:pzA = {N(p.BeamEnergies[0])}\n");
+            s.Append("Beams:pxB = 0\nBeams:pyB = 0\nBeams:pzB = 0\n");
         }
-        else
+        else if (Math.Abs(p.BeamEnergies[0] - p.BeamEnergies[1]) < 1e-9)
         {
+            // Equal energies are said once, as the energy in the centre of mass; unequal ones oblige Pythia to
+            // boost, and it wants them one by one.
             s.Append("Beams:frameType = 1\n");
             s.Append($"Beams:eCM = {N(p.CentreOfMassEnergy)}\n");
         }
-        s.Append($"Beams:idA = {p.Beams[0]}\n");
-        s.Append($"Beams:idB = {p.Beams[1]}\n");
-
-        bool hadrons = p.Beams.All(b => Math.Abs(b) > 100);
-        if (hadrons)
-        {
-            // A hadron machine produces mostly soft scattering; asking for the hard processes alone, above a
-            // transverse momentum, is what makes the sample interesting rather than enormous.
-            s.Append("HardQCD:all = on\n");
-            s.Append($"PhaseSpace:pTHatMin = {N(p.MinimumPT ?? 20)}\n");
-        }
         else
         {
-            s.Append("WeakSingleBoson:ffbar2gmZ = on\n");
-            s.Append("WeakDoubleBoson:ffbar2WW = on\n");
-            s.Append("WeakDoubleBoson:ffbar2gmZgmZ = on\n");
-            if (p.MinimumPT is double pt) s.Append($"PhaseSpace:pTHatMin = {N(pt)}\n");
+            s.Append("Beams:frameType = 2\n");
+            s.Append($"Beams:eA = {N(p.BeamEnergies[0])}\nBeams:eB = {N(p.BeamEnergies[1])}\n");
         }
+
+        // A charged current needs a beam that can change flavour. Two leptons of opposite charge cannot, so
+        // switching ffbar2W on there would only print a warning and produce nothing.
+        bool leptonic = p.Beams.All(b => Math.Abs(b) >= 11 && Math.Abs(b) <= 16);
+        foreach (var channel in p.Channels)
+        {
+            switch (channel)
+            {
+                case MCProcess.Channel.SingleBoson:
+                    s.Append("WeakSingleBoson:ffbar2gmZ = on\n");
+                    if (!leptonic) s.Append("WeakSingleBoson:ffbar2W = on\n");
+                    break;
+                case MCProcess.Channel.BosonPair:
+                    s.Append("WeakDoubleBoson:ffbar2gmZgmZ = on\n");
+                    s.Append("WeakDoubleBoson:ffbar2ZW = on\n");
+                    s.Append("WeakDoubleBoson:ffbar2WW = on\n");
+                    break;
+                case MCProcess.Channel.BosonExchange:
+                    // The t channel: the two beams scatter off each other by passing a boson between them.
+                    // Nothing annihilates, which is what makes an electron–proton ring possible. The exchanged
+                    // photon diverges as Q² goes to zero; Pythia sets its own floor for want of better, and an
+                    // explicit cut replaces it as soon as one is given.
+                    s.Append("WeakBosonExchange:ff2ff(t:gmZ) = on\n");
+                    s.Append("WeakBosonExchange:ff2ff(t:W) = on\n");
+                    break;
+            }
+        }
+        if (p.MinimumPT is double pt && pt > 0) s.Append($"PhaseSpace:pTHatMin = {N(pt)}\n");
         return s.ToString();
+    }
+
+    /// <summary>Why these beams cannot do what the channels ask, said plainly rather than by producing nothing.
+    /// Annihilation wants a particle and its antiparticle, or two hadrons whose partons see to it; the t channel
+    /// asks for nothing of the sort, and so never objects.</summary>
+    static string? ColliderObjection(MCProcess p)
+    {
+        if (p.Channels.Length == 0) return null;
+        bool hadronic0 = Math.Abs(p.Beams[0]) > 100, hadronic1 = Math.Abs(p.Beams[1]) > 100;
+        bool annihilate = (hadronic0 && hadronic1) || p.Beams[0] == -p.Beams[1];
+        bool open = p.Channels.Any(c => c == MCProcess.Channel.BosonExchange || annihilate);
+        if (open) return null;
+        return $"beams {p.Beams[0]} and {p.Beams[1]} cannot annihilate, so the channels asked for "
+             + "(ff̄ → γ*/Z, ff̄ → VV) have nothing to work with — these two scatter "
+             + "rather than annihilate, which is the boson-exchange family";
     }
 
     /// <summary>Herwig 7: written as a <c>.in</c> file, then <c>Herwig read</c> and <c>Herwig run</c>. On

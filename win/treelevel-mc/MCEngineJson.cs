@@ -30,3 +30,35 @@ public sealed class AppleDateConverter : JsonConverter<DateTimeOffset>
     public override void Write(Utf8JsonWriter writer, DateTimeOffset value, JsonSerializerOptions options)
         => writer.WriteNumberValue((value - Reference).TotalSeconds);
 }
+
+/// <summary>The collider mode as Swift writes it. Its raw value is the case name Swift spells — <c>collider</c>,
+/// <c>singleBoson</c> — and the lowercase policy would write <c>singleboson</c>, which the other side would not
+/// read back. These two therefore carry their spelling explicitly, and are registered before the general enum
+/// converter so that they win.</summary>
+public sealed class ColliderModeConverter : JsonConverter<MCProcess.Mode>
+{
+    public override MCProcess.Mode Read(ref Utf8JsonReader reader, Type type, JsonSerializerOptions options)
+        => reader.GetString() == "collider" ? MCProcess.Mode.Collider : MCProcess.Mode.Exclusive;
+
+    public override void Write(Utf8JsonWriter writer, MCProcess.Mode value, JsonSerializerOptions options)
+        => writer.WriteStringValue(value == MCProcess.Mode.Collider ? "collider" : "exclusive");
+}
+
+public sealed class ColliderChannelConverter : JsonConverter<MCProcess.Channel>
+{
+    public override MCProcess.Channel Read(ref Utf8JsonReader reader, Type type, JsonSerializerOptions options)
+        => reader.GetString() switch
+        {
+            "bosonPair" => MCProcess.Channel.BosonPair,
+            "bosonExchange" => MCProcess.Channel.BosonExchange,
+            _ => MCProcess.Channel.SingleBoson,
+        };
+
+    public override void Write(Utf8JsonWriter writer, MCProcess.Channel value, JsonSerializerOptions options)
+        => writer.WriteStringValue(value switch
+        {
+            MCProcess.Channel.BosonPair => "bosonPair",
+            MCProcess.Channel.BosonExchange => "bosonExchange",
+            _ => "singleBoson",
+        });
+}
