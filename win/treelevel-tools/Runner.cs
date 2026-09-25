@@ -33,16 +33,13 @@ public sealed class Runner
             return Failed($"the job has no input file ({job.Input})", start);
         try
         {
-            // Collider mode exists in the Pythia path and nowhere else yet. Handing such a job to Herwig or
-            // Sherpa would not fail: they would compute the exclusive process the final state names — which in
-            // this mode is the signature to look for, not what to produce — and the sample would come back
-            // entirely made of the drawn process. Measuring a cross section on it would then give back the
-            // number one was supposed to be measuring, which is the worst possible answer: wrong, and
-            // convincing. Better to say no.
-            if (job.IsCollider && job.UseGenerator != MCJob.Generator.Pythia8)
-                return Failed($"{MCJob.Label(job.UseGenerator)} cannot yet be run as a collider — only Pythia 8 "
-                            + "opens families of hard channels rather than computing one process. Choose Pythia 8, "
-                            + "or turn the collider off to compute the drawn process with this generator", start);
+            // A collider job handed to a generator that does not know the mode would not fail: it would compute
+            // the exclusive process the final state names — which here is the signature to look for, not what to
+            // produce — and the sample would come back entirely made of the drawn process. The measurement would
+            // then hand back the number it was meant to measure: wrong, and convincing. So each generator either
+            // knows the mode or says it does not.
+            if (job.IsCollider && ColliderRefusal(job.UseGenerator, job.HardProcess!) is string no)
+                return Failed(no, start);
             return job.UseGenerator switch
             {
                 MCJob.Generator.Passthrough => Passthrough(start),
@@ -359,6 +356,50 @@ public sealed class Runner
         if (floor is double pt && pt > 0) s.Append($"PhaseSpace:pTHatMin = {N(pt)}\n");
         return s.ToString();
     }
+
+    /// <summary>Why this generator cannot run this collider job, or null when it can.
+    ///
+    /// Pythia opens families of hard processes by name, Herwig by inserting matrix elements, Sherpa by declaring
+    /// processes over particle containers. WHIZARD and CalcHEP are built the other way round: they compile the
+    /// one process they are given, and a family is not a thing one can hand them — enumerating every channel
+    /// would be writing the answer rather than asking the question. They say so instead of pretending.</summary>
+    static string? ColliderRefusal(MCJob.Generator generator, MCProcess p)
+    {
+        if (generator is MCJob.Generator.Pythia8 or MCJob.Generator.Herwig7 or MCJob.Generator.Sherpa3)
+            return ColliderChannelRefusal(generator, p);
+        return $"{MCJob.Label(generator)} computes the one process it is given, compiling a matrix element for "
+             + "it. Opening whole families of channels, which is what a collider does, is not something it can "
+             + "be asked. Use Pythia 8, Herwig 7 or Sherpa 3 as the collider, or turn the collider off to "
+             + $"compute the drawn process with {MCJob.Label(generator)}";
+    }
+
+    /// <summary>The families a generator knows, among those asked for. Said here rather than discovered in a
+    /// log: a channel silently left out is a cross section quietly wrong.</summary>
+    static string? ColliderChannelRefusal(MCJob.Generator generator, MCProcess p)
+    {
+        MCProcess.Channel[] known = generator switch
+        {
+            MCJob.Generator.Herwig7 => new[] { MCProcess.Channel.SingleBoson, MCProcess.Channel.BosonPair,
+                                               MCProcess.Channel.Qcd, MCProcess.Channel.Soft },
+            MCJob.Generator.Sherpa3 => new[] { MCProcess.Channel.SingleBoson, MCProcess.Channel.BosonPair,
+                                               MCProcess.Channel.Qcd },
+            _ => Enum.GetValues<MCProcess.Channel>(),
+        };
+        var missing = p.Channels.Where(c => !known.Contains(c)).ToArray();
+        if (missing.Length == 0) return null;
+        return $"{MCJob.Label(generator)} does not open " + string.Join(", ", missing.Select(ChannelName))
+             + " as a collider channel. Pythia 8 opens all of them; otherwise leave that family out";
+    }
+
+    static string ChannelName(MCProcess.Channel c) => c switch
+    {
+        MCProcess.Channel.BosonPair => "boson pairs",
+        MCProcess.Channel.BosonExchange => "boson exchange (the t channel)",
+        MCProcess.Channel.Qcd => "hard QCD",
+        MCProcess.Channel.Photoproduction => "photoproduction",
+        MCProcess.Channel.Soft => "the whole cross section",
+        _ => "single-boson annihilation",
+    };
 
     /// <summary>Why these beams cannot do what the channels ask, said plainly rather than by producing nothing.
     /// Annihilation wants a particle and its antiparticle, or two hadrons whose partons see to it; the t channel
