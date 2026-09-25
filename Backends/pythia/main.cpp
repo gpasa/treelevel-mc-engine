@@ -1,4 +1,4 @@
-// TreeLevel MC Engine — Pythia 8 driver.
+// TreeLevel Tools — Pythia 8 driver.
 //
 // Reads a Pythia command file (written by the engine, pointing at the Les Houches events of the job) and
 // writes the showered events as HepMC3 (Asciiv3). The HepMC3 output is written here, so that the module needs
@@ -65,7 +65,7 @@ std::string dataPath() {
     for (const char* relative : {"/xmldoc", "/share/Pythia8/xmldoc", "/../share/Pythia8/xmldoc"})
       candidates.push_back(folder + relative);
   if (const char* local = std::getenv("LOCALAPPDATA"))
-    candidates.push_back(std::string(local) + "/TreeLevel MC Engine/Modules/pythia8/xmldoc");
+    candidates.push_back(std::string(local) + "/TreeLevel Tools/Modules/pythia8/xmldoc");
   for (const std::string& path : candidates) if (isDirectory(path)) return path;
 #else
   const char* candidates[] = {
@@ -89,6 +89,15 @@ public:
   }
   ~HepMCWriter() { out << "HepMC::Asciiv3-END_EVENT_LISTING\n"; }
   bool good() const { return out.good(); }
+
+  /// The cross section as it stands once the run is over, which is not the one the last event carried: Pythia
+  /// normalises in `stat()`, after the loop. The two agree to a fraction of a percent over tens of thousands
+  /// of events and differ by a good ten over a few hundred — and a few hundred is what one asks for while
+  /// trying things out. Readers keep the last attribute they meet, so writing it here settles the matter.
+  void finalCrossSection(double crossSectionPb, double errorPb) {
+    const double error = (errorPb > 0 && errorPb < crossSectionPb) ? errorPb : 0.0;
+    out << "A 0 GenCrossSection " << number_(crossSectionPb) << " " << number_(error) << " -1 -1\n";
+  }
 
   void write(const Pythia8::Event& event, double weight, int number, double crossSectionPb, double errorPb) {
     // HepMC ids are 1-based and skip Pythia's entry 0 (the whole system).
@@ -195,6 +204,10 @@ int main(int argc, char* argv[]) {
       std::cout << written << " events have been generated" << std::endl;
   }
   pythia.stat();
+#ifndef TREELEVEL_WITH_HEPMC3
+  // HepMC3 cross sections are in pb; Pythia reports mb.
+  if (written > 0) writer.finalCrossSection(pythia.info.sigmaGen() * 1e9, pythia.info.sigmaErr() * 1e9);
+#endif
   std::cout << "written " << written << " events, sigma = " << pythia.info.sigmaGen()
             << " +- " << pythia.info.sigmaErr() << " mb" << std::endl;
   return written > 0 ? 0 : 1;

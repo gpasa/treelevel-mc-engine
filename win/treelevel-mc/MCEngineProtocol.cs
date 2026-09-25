@@ -131,11 +131,16 @@ public sealed class MCProcess
     /// <c>BosonPair</c> covers WW, ZZ and ZW, above their threshold, and needs the same. <c>BosonExchange</c> is
     /// the t channel: the two beams scatter off each other by passing a γ, a Z or a W between them. Nothing has
     /// to annihilate, which is why an electron and a proton make a perfectly good machine — HERA was one — and
-    /// <c>Qcd</c> is hard parton scattering, which is the bulk of what a proton ring makes: without it a hadron
+/// <c>Photoproduction</c> is the other machine: a lepton beam enters as the flux of quasi-real photons it
+    /// radiates, and those photons interact hadronically. At HERA it is five times deeply inelastic scattering,
+    /// and between two leptons it is two-photon physics. It cannot be combined with the families above inside one
+    /// run — turning the photon flux on replaces the beam, and the lepton stops colliding as a lepton — so asking
+    /// for both means two runs, which is what <see cref="MixConfigurations"/> is for.
+        /// <c>Qcd</c> is hard parton scattering, which is the bulk of what a proton ring makes: without it a hadron
     /// machine produces Drell–Yan and nothing else, which is a channel rather than a collider. It diverges as the
     /// transverse momentum goes to zero, so it is the one family that insists on a floor.
     /// why leaving this family out would rule out a whole kind of collider rather than a mistaken setting.</summary>
-    public enum Channel { SingleBoson, BosonPair, BosonExchange, Qcd }
+    public enum Channel { SingleBoson, BosonPair, BosonExchange, Qcd, Photoproduction }
 
     public int[] Beams { get; set; } = Array.Empty<int>();
     public double[] BeamEnergies { get; set; } = Array.Empty<double>();
@@ -154,6 +159,13 @@ public sealed class MCProcess
     /// own mass. What this buys is modest and worth seeing: 400 GeV on a proton at rest is a 27 GeV machine,
     /// because only √(2 m E) of it is available.</summary>
     public bool FixedTarget { get; set; }
+
+    /// <summary>Whether to run the two machine configurations and put their events together in proportion to
+    /// their cross sections. Asking for photoproduction beside an electroweak family is asking for two things
+    /// one run cannot hold: with this set, the engine makes both samples and keeps from each the share its cross
+    /// section earns, which is what an experiment actually sees. Without it, the combination is refused rather
+    /// than silently resolved in favour of one.</summary>
+    public bool MixConfigurations { get; set; }
 
     [JsonIgnore]
     public double CentreOfMassEnergy => BeamEnergies.Sum();

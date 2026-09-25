@@ -52,6 +52,7 @@ public sealed class ColliderChannelConverter : JsonConverter<MCProcess.Channel>
             "bosonPair" => MCProcess.Channel.BosonPair,
             "bosonExchange" => MCProcess.Channel.BosonExchange,
             "qcd" => MCProcess.Channel.Qcd,
+            "photoproduction" => MCProcess.Channel.Photoproduction,
             _ => MCProcess.Channel.SingleBoson,
         };
 
@@ -61,6 +62,7 @@ public sealed class ColliderChannelConverter : JsonConverter<MCProcess.Channel>
             MCProcess.Channel.BosonPair => "bosonPair",
             MCProcess.Channel.BosonExchange => "bosonExchange",
             MCProcess.Channel.Qcd => "qcd",
+            MCProcess.Channel.Photoproduction => "photoproduction",
             _ => "singleBoson",
         });
 }

@@ -9,7 +9,7 @@ namespace TreeLevel.MC;
 /// in its own prefix.</summary>
 public static class Installation
 {
-    /// <summary>%LocalAppData%\TreeLevel MC Engine — modules, job numbers and the published capabilities.</summary>
+    /// <summary>%LocalAppData%\TreeLevel Tools — modules, job numbers and the published capabilities.</summary>
     public static string SupportDirectory
     {
         get

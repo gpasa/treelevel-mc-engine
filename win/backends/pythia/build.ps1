@@ -1,11 +1,11 @@
-﻿# Builds and installs the Pythia 8 module of the TreeLevel MC Engine.
+﻿# Builds and installs the Pythia 8 module of TreeLevel Tools.
 #
 #   .\build.ps1 -Pythia C:\src\pythia8318
 #   .\build.ps1 -Pythia C:\src\pythia8318 -Arch x64 -NoInstall
 #
 # Pythia is GPL and is downloaded by you from https://pythia.org (any 8.3 release): unpack the archive and
 # pass the folder holding include\ and src\. The module is installed, driver and xmldoc together, into
-# %LOCALAPPDATA%\TreeLevel MC Engine\Modules\pythia8, where the engine looks for it.
+# %LOCALAPPDATA%\TreeLevel Tools\Modules\pythia8, where the engine looks for it.
 #
 # Copyright (C) 2026 Guglielmo Pasa. GNU General Public License v3 or later.
 
@@ -28,7 +28,7 @@ if (-not $Pythia) {
     $guesses = @(
         (Join-Path $root 'pythia8'),
         (Join-Path (Split-Path (Split-Path $root -Parent) -Parent) 'pythia8'),
-        (Join-Path $env:LOCALAPPDATA 'TreeLevel MC Engine\src\pythia8')
+        (Join-Path $env:LOCALAPPDATA 'TreeLevel Tools\src\pythia8')
     )
     $guesses += Get-ChildItem -Path (Split-Path $root -Parent) -Directory -Filter 'pythia8*' -ErrorAction SilentlyContinue |
                 ForEach-Object { $_.FullName }
@@ -77,7 +77,7 @@ if (-not $generator) { Fail 'Visual Studio 2019 or later is needed to build Pyth
 
 $build = Join-Path $root "build\$Arch"
 if ($Clean -and (Test-Path $build)) { Remove-Item $build -Recurse -Force }
-if (-not $Prefix) { $Prefix = Join-Path $env:LOCALAPPDATA 'TreeLevel MC Engine\Modules\pythia8' }
+if (-not $Prefix) { $Prefix = Join-Path $env:LOCALAPPDATA 'TreeLevel Tools\Modules\pythia8' }
 
 Write-Host "Pythia    $Pythia"
 Write-Host "generator $generator ($platform)"

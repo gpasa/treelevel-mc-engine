@@ -76,22 +76,41 @@ public sealed class Runner
             if (Installation.Container() is { } container) return InContainer(container, start);
             return Failed("the Pythia 8 module is not installed", start);
         }
+        if (job.IsCollider && job.HardProcess is MCProcess hard)
+        {
+            if (ColliderObjection(hard) is string objection) return Failed(objection, start);
+            var beamsAsThey = hard.Channels.Where(c => c != MCProcess.Channel.Photoproduction).ToArray();
+            var photonFlux = hard.Channels.Where(c => c == MCProcess.Channel.Photoproduction).ToArray();
+            if (beamsAsThey.Length > 0 && photonFlux.Length > 0)
+            {
+                if (!hard.MixConfigurations)
+                    return Failed("photoproduction turns the lepton beam into the flux of photons it radiates, "
+                                + "which leaves nothing to annihilate or exchange: Pythia accepts no event from "
+                                + "the other families once it is on. Ask for the two configurations to be mixed, "
+                                + "and both are run and put together in proportion to their cross sections",
+                                  start);
+                return PythiaMixed(driver, beamsAsThey, photonFlux, start);
+            }
+        }
+        return PythiaOnce(driver, job.HardProcess?.Channels, job.Output, job.Events, job.Seed, start, true);
+    }
+
+    /// <summary>One pass of Pythia, over one set of channels, into one file.</summary>
+    bool PythiaOnce(string driver, MCProcess.Channel[]? channels, string output, int events, int seed,
+                    DateTimeOffset start, bool finishNow, string? step = null)
+    {
         // The generator runs with the job folder as its working directory and is given relative names: Pythia
         // reads `Beams:LHEF` as a single word, so a path with spaces would be cut short.
         var settings = new StringBuilder();
-        if (job.IsCollider)
-        {
-            if (ColliderObjection(job.HardProcess!) is string objection) return Failed(objection, start);
-            settings.Append(ColliderBeams(job.HardProcess!));
-        }
+        if (job.IsCollider) settings.Append(ColliderBeams(job.HardProcess!, channels));
         else
         {
             settings.Append("Beams:frameType = 4\n");
             settings.Append($"Beams:LHEF = {job.Input}\n");
         }
-        settings.Append($"Main:numberOfEvents = {job.Events}\n");
+        settings.Append($"Main:numberOfEvents = {events}\n");
         settings.Append("Random:setSeed = on\n");
-        settings.Append($"Random:seed = {job.Seed % 900_000_000}\n");
+        settings.Append($"Random:seed = {seed % 900_000_000}\n");
         settings.Append($"PartonLevel:ISR = {(job.Shower ? "on" : "off")}\n");
         settings.Append($"PartonLevel:FSR = {(job.Shower ? "on" : "off")}\n");
         settings.Append($"PartonLevel:MPI = {(job.MultipleInteractions ? "on" : "off")}\n");
@@ -101,12 +120,112 @@ public sealed class Runner
         settings.Append("Next:numberShowEvent = 0");
         if (!string.IsNullOrEmpty(job.Tune)) settings.Append($"\nTune:pp = {job.Tune}");
         if (!string.IsNullOrEmpty(job.ExtraSettings)) settings.Append("\n" + job.ExtraSettings);
-        File.WriteAllText(Path.Combine(folder.Path, "pythia.cmnd"), settings.ToString(), MCEngineProtocol.Utf8);
+        string config = output == job.Output ? "pythia.cmnd"
+                                             : "pythia." + Path.GetFileNameWithoutExtension(output) + ".cmnd";
+        File.WriteAllText(Path.Combine(folder.Path, config), settings.ToString(), MCEngineProtocol.Utf8);
 
         var environment = new Dictionary<string, string>();
         if (Installation.PythiaData is string data) environment["PYTHIA8DATA"] = data;
         string version = Installation.Capabilities(engineVersion).Versions.TryGetValue("pythia8", out var v) ? v : "Pythia 8";
-        return RunProcess(driver, new[] { "--config", "pythia.cmnd", "--out", job.Output }, start, version, environment: environment);
+        return RunProcess(driver, new[] { "--config", config, "--out", output }, start, version,
+                          step: step, finishNow: finishNow, environment: environment);
+    }
+
+    /// <summary>The two machine configurations, run one after the other and put together in proportion to their
+    /// cross sections. A lepton beam either collides as a lepton or enters as the flux of photons it radiates;
+    /// Pythia does one or the other, never both, so seeing both means running both.
+    ///
+    /// The events are kept, not reweighted: from each sample the share its cross section earns, so that what
+    /// comes out is still a plain list of events in the proportions the machine makes them — which is the thing
+    /// worth looking at. The whole cross section is their sum.</summary>
+    bool PythiaMixed(string driver, MCProcess.Channel[] beamsAsThey, MCProcess.Channel[] photonFlux,
+                     DateTimeOffset start)
+    {
+        const string fileA = "events.beams.hepmc", fileB = "events.photons.hepmc";
+        if (!PythiaOnce(driver, beamsAsThey, fileA, job.Events, job.Seed, start, false, "faisceaux tels quels"))
+            return false;
+        if (!PythiaOnce(driver, photonFlux, fileB, job.Events, job.Seed + 1, start, false, "flux de photons"))
+            return false;
+
+        var (countA, sigmaA, errorA) = Summary(Path.Combine(folder.Path, fileA));
+        var (countB, sigmaB, errorB) = Summary(Path.Combine(folder.Path, fileB));
+        if (countA <= 0 || countB <= 0 || sigmaA is not double sA || sigmaB is not double sB || sA + sB <= 0)
+            return Failed("one of the two configurations produced nothing — see engine.log", start);
+
+        int written = Merge(Path.Combine(folder.Path, fileA), Path.Combine(folder.Path, fileB),
+                            folder.OutputPath(job), job.Events, sA, sB, errorA ?? 0, errorB ?? 0);
+        if (written <= 0) return Failed("the two samples could not be put together", start);
+        foreach (var scratch in new[] { fileA, fileB })
+            try { File.Delete(Path.Combine(folder.Path, scratch)); } catch (Exception) { }
+
+        double error = Math.Sqrt((errorA ?? 0) * (errorA ?? 0) + (errorB ?? 0) * (errorB ?? 0));
+        Publish(new MCStatus(MCStatus.State.Finished, job.Id)
+        {
+            Number = number, Started = start, Finished = DateTimeOffset.Now, EventsWritten = written,
+            GeneratorVersion = Installation.Capabilities(engineVersion).Versions.TryGetValue("pythia8", out var v) ? v : "Pythia 8",
+            Progress = 1, Seconds = (DateTimeOffset.Now - start).TotalSeconds,
+            CrossSection = sA + sB, CrossSectionError = error,
+        });
+        return true;
+    }
+
+    /// <summary>Puts two HepMC3 samples together, keeping from each the share its cross section earns and taking
+    /// them in turn so that the result reads as one sample rather than two stuck end to end.</summary>
+    static int Merge(string a, string b, string @out, int wanted, double sigmaA, double sigmaB,
+                     double errorA, double errorB)
+    {
+        var (header, eventsA) = Split(a);
+        var (_, eventsB) = Split(b);
+        if (eventsA.Count == 0 || eventsB.Count == 0) return 0;
+        double total = sigmaA + sigmaB;
+        int fromA = Math.Clamp((int)Math.Round(wanted * sigmaA / total, MidpointRounding.AwayFromZero), 0, eventsA.Count);
+        int fromB = Math.Clamp(wanted - fromA, 0, eventsB.Count);
+        if (fromA + fromB == 0) return 0;
+
+        string attribute = $"A 0 GenCrossSection {E(total)} {E(Math.Sqrt(errorA * errorA + errorB * errorB))} -1 -1";
+        using var writer = new StreamWriter(@out, false, MCEngineProtocol.Utf8);
+        foreach (var line in header) writer.WriteLine(line);
+        int takenA = 0, takenB = 0, n = 0;
+        while (takenA < fromA || takenB < fromB)
+        {
+            // Take from whichever sample is furthest behind the share it is owed: the two end up interleaved in
+            // their true proportion instead of one following the other.
+            bool takeA = takenA < fromA
+                         && (takenB >= fromB || fromA == 0 || fromB == 0
+                             || (double)takenA / fromA <= (double)takenB / fromB);
+            foreach (var line in takeA ? eventsA[takenA++] : eventsB[takenB++])
+            {
+                if (line.StartsWith("E ", StringComparison.Ordinal))
+                {
+                    var f = line.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+                    if (f.Length >= 4) { writer.WriteLine($"E {n} {f[2]} {f[3]}"); continue; }
+                }
+                if (line.StartsWith("A 0 GenCrossSection", StringComparison.Ordinal)) { writer.WriteLine(attribute); continue; }
+                writer.WriteLine(line);
+            }
+            n += 1;
+        }
+        writer.WriteLine("HepMC::Asciiv3-END_EVENT_LISTING");
+        return n;
+    }
+
+    static string E(double x) => x.ToString("0.0000000000e+00", CultureInfo.InvariantCulture);
+
+    /// <summary>A HepMC3 file cut into its header and one block per event.</summary>
+    static (List<string> Header, List<List<string>> Events) Split(string path)
+    {
+        var header = new List<string>();
+        var events = new List<List<string>>();
+        List<string>? current = null;
+        foreach (var raw in File.ReadLines(path))
+        {
+            string line = raw.TrimEnd();
+            if (line.Contains("END_EVENT_LISTING", StringComparison.Ordinal)) break;
+            if (line.StartsWith("E ", StringComparison.Ordinal)) { current = new List<string>(); events.Add(current); }
+            if (current != null) current.Add(line);
+            else header.Add(line);
+        }
+        return (header, events);
     }
 
     /// <summary>A collider run: the beams, their energy, and the families of hard channels left open. What comes
@@ -117,7 +236,7 @@ public sealed class Runner
     /// These settings are the ones the Mac writes, switch for switch. The two engines read the same job and must
     /// hand Pythia the same thing, or the same document would give two samples depending on the machine it ran
     /// on — which is worse than either being wrong, because nothing would say so.</summary>
-    static string ColliderBeams(MCProcess p)
+    static string ColliderBeams(MCProcess p, MCProcess.Channel[]? only = null)
     {
         if (p.Beams.Length != 2 || p.BeamEnergies.Length != 2) return "";
         var s = new StringBuilder();
@@ -149,7 +268,7 @@ public sealed class Runner
         // A charged current needs a beam that can change flavour. Two leptons of opposite charge cannot, so
         // switching ffbar2W on there would only print a warning and produce nothing.
         bool leptonic = p.Beams.All(b => Math.Abs(b) >= 11 && Math.Abs(b) <= 16);
-        foreach (var channel in p.Channels)
+        foreach (var channel in only ?? p.Channels)
         {
             switch (channel)
             {
@@ -175,13 +294,24 @@ public sealed class Runner
                     // produces Drell–Yan and nothing else, which is a channel rather than a collider.
                     s.Append("HardQCD:all = on\n");
                     break;
+                case MCProcess.Channel.Photoproduction:
+                    // The lepton enters as the flux of quasi-real photons it radiates, and those interact
+                    // hadronically. This replaces the beam: Pythia's own accounting shows the annihilation and
+                    // t-channel processes accepting nothing once it is on, which is why this family cannot share
+                    // a run with them.
+                    s.Append("PDF:lepton2gamma = on\n");
+                    s.Append("Photon:ProcessType = 0\n");
+                    s.Append("HardQCD:all = on\n");
+                    break;
             }
         }
         // The QCD cross section grows without bound as the transverse momentum goes to zero, so that family
         // insists on a floor: given one, it is used; given none, twenty GeV, which keeps the sample the hard
         // scattering one meant to look at rather than an enormous soft one.
         double? floor = p.MinimumPT;
-        if (floor is null or <= 0 && p.Channels.Contains(MCProcess.Channel.Qcd)) floor = 20;
+        bool needsFloor = p.Channels.Contains(MCProcess.Channel.Qcd)
+                       || p.Channels.Contains(MCProcess.Channel.Photoproduction);
+        if (floor is null or <= 0 && needsFloor) floor = 20;
         if (floor is double pt && pt > 0) s.Append($"PhaseSpace:pTHatMin = {N(pt)}\n");
         return s.ToString();
     }
@@ -194,14 +324,19 @@ public sealed class Runner
         if (p.Channels.Length == 0) return null;
         bool hadronic0 = Math.Abs(p.Beams[0]) > 100, hadronic1 = Math.Abs(p.Beams[1]) > 100;
         bool annihilate = (hadronic0 && hadronic1) || p.Beams[0] == -p.Beams[1];
-        // Hard QCD wants partons on both sides, which is to say two hadrons; the t channel asks for nothing.
+        // Hard QCD wants partons on both sides, which is to say two hadrons; the t channel asks for nothing; and
+        // photoproduction wants a lepton, since the photon flux is what a lepton radiates.
         bool open = p.Channels.Any(c => c switch
         {
             MCProcess.Channel.BosonExchange => true,
             MCProcess.Channel.Qcd => hadronic0 && hadronic1,
+            MCProcess.Channel.Photoproduction => !hadronic0 || !hadronic1,
             _ => annihilate,
         });
         if (open) return null;
+        if (p.Channels.All(c => c == MCProcess.Channel.Photoproduction))
+            return $"beams {p.Beams[0]} and {p.Beams[1]} are both hadrons, and neither radiates the photon flux "
+                 + "photoproduction needs — that family wants a lepton on one side at least";
         // Name the obstacle that is actually there. Asking for hard QCD between two leptons is not a failure to
         // annihilate — e⁺ and e⁻ annihilate perfectly well — it is an absence of partons, and saying the wrong
         // thing sends whoever reads it looking in the wrong place.
