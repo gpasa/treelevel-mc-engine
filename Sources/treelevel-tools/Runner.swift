@@ -808,7 +808,7 @@ struct Runner {
         status.message = message
         status.seconds = Date().timeIntervalSince(start)
         publish(status)
-        FileHandle.standardError.write(("treelevel-mc: " + message + "\n").data(using: .utf8)!)
+        FileHandle.standardError.write(("treelevel-tools: " + message + "\n").data(using: .utf8)!)
         return false
     }
 

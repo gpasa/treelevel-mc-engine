@@ -32,7 +32,7 @@ final class EngineDelegate: NSObject, NSApplicationDelegate {
 
     func application(_ application: NSApplication, open urls: [URL]) {
         for url in urls {
-            // treelevel-mc://run?job=<path> — this reaches the engine whether it was running or not — or a folder.
+            // treelevel-tools://run?job=<path> — this reaches the engine whether it was running or not — or a folder.
             if url.isFileURL { EngineState.shared.run(folder: url) }
             else if let job = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems?.first(where: { $0.name == "job" })?.value {
                 EngineState.shared.run(folder: URL(fileURLWithPath: job, isDirectory: true))

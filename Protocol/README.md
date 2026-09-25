@@ -1,7 +1,7 @@
 # Protocole d'échange
 
 `MCEngineProtocol.swift` est copié à l'identique dans TreeLevel (`Sources/FeynCore/Events/MCEngine.swift`) et
-dans le moteur (`Sources/treelevel-mc/`). Il décrit le dossier de travail — `job.json`, `events.lhe`,
+dans le moteur (`Sources/treelevel-tools/`). Il décrit le dossier de travail — `job.json`, `events.lhe`,
 `status.json`, `engine.log`, `events.hepmc` — et les structures correspondantes.
 
 Ce fichier est sous licence MIT : les deux programmes, distribués séparément et sous des licences différentes,

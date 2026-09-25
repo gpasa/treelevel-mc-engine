@@ -1,10 +1,10 @@
 import Foundation
 
-// TreeLevel MC Engine — runs a parton shower and hadronisation on the parton-level events of a TreeLevel job.
+// TreeLevel Tools — runs a parton shower and hadronisation on the parton-level events of a TreeLevel job.
 //
-//   treelevel-mc run <job folder>     read job.json, produce events.hepmc, keep status.json up to date
-//   treelevel-mc capabilities [--out file]   what this installation can do
-//   treelevel-mc version
+//   treelevel-tools run <job folder>     read job.json, produce events.hepmc, keep status.json up to date
+//   treelevel-tools capabilities [--out file]   what this installation can do
+//   treelevel-tools version
 //
 // The generators are separate programs: the Pythia driver built by Backends/pythia (treelevel-pythia) and
 // Herwig's own command line. Nothing here links against them.
@@ -12,14 +12,14 @@ import Foundation
 let engineVersion = "0.3.0"
 
 func fail(_ message: String) -> Never {
-    FileHandle.standardError.write(("treelevel-mc: " + message + "\n").data(using: .utf8)!)
+    FileHandle.standardError.write(("treelevel-tools: " + message + "\n").data(using: .utf8)!)
     exit(1)
 }
 
 let args = Array(CommandLine.arguments.dropFirst())
 guard let command = args.first else {
     print("""
-    usage: treelevel-mc <command>
+    usage: treelevel-tools <command>
       run <job folder>            run the job written by TreeLevel (job.json, events.lhe)
       capabilities [--out file]   list the generators this installation can run, as JSON
       version
