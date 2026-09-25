@@ -176,8 +176,30 @@ public struct MCProcess: Codable, Equatable {
     /// `qcd` is hard parton scattering, which is the bulk of what a proton ring makes: without it a hadron
     /// machine produces Drell–Yan and nothing else, which is a channel rather than a collider. It diverges
     /// as the transverse momentum goes to zero, so it is the one family that insists on a floor.
-    public enum Channel: String, Codable, CaseIterable { case singleBoson, bosonPair, bosonExchange, qcd }
+    /// `photoproduction` fait entrer un lepton par le flux de photons qu'il rayonne : la photoproduction
+    /// sur un hadron, la physique à deux photons entre deux leptons. Elle **remplace** le faisceau au lieu
+    /// de s'y ajouter — Pythia ne fait pas collisionner le lepton et son photon dans le même tirage — et
+    /// c'est pourquoi le moteur refuse de la combiner sans `mixConfigurations`.
+    ///
+    /// `soft` est la QCD molle : élastique, diffractif, fond non diffractif. C'est la seule famille qui
+    /// rende « tout ce que la machine produit » littéralement vrai — 100 mb à 13 TeV contre 0,7 pour la
+    /// diffusion dure. Elle n'admet aucun seuil en impulsion transverse, qui retrancherait précisément ce
+    /// qu'on vient voir, et elle ne se combine pas avec `qcd` : son fond non diffractif contient déjà la
+    /// diffusion dure, que ses interactions multiples fabriquent.
+    public enum Channel: String, Codable, CaseIterable {
+        case singleBoson, bosonPair, bosonExchange, qcd, photoproduction, soft
+    }
     public var channels: [Channel] = [.singleBoson]
+
+    /// Tirer deux configurations de machine et les assembler, quand les voies demandées ne peuvent pas
+    /// vivre dans le même tirage — le flux de photons remplaçant le faisceau. Le moteur produit alors un
+    /// échantillon par configuration et les entremêle ; la section efficace du fichier est leur somme.
+    public var mixConfigurations = false
+
+    /// Dans un assemblage, donner à chaque configuration la moitié des événements plutôt que la part que
+    /// sa section efficace lui vaut. La configuration rare devient regardable, au prix d'un échantillon
+    /// pondéré : les événements ne comptent plus pour un, et les barres d'erreur s'élargissent.
+    public var mixEqualShares = false
 
     public init(beams: [Int], beamEnergies: [Double], finalState: [Int],
                 couplingOrders: [String: Int] = [:], minimumPT: Double? = nil, model: String = "SM",
@@ -207,6 +229,8 @@ public struct MCProcess: Codable, Equatable {
         model = try c.decodeIfPresent(String.self, forKey: .model) ?? "SM"
         colliderMode = try c.decodeIfPresent(Mode.self, forKey: .colliderMode) ?? .exclusive
         channels = try c.decodeIfPresent([Channel].self, forKey: .channels) ?? [.singleBoson]
+        mixConfigurations = try c.decodeIfPresent(Bool.self, forKey: .mixConfigurations) ?? false
+        mixEqualShares = try c.decodeIfPresent(Bool.self, forKey: .mixEqualShares) ?? false
         fixedTarget = try c.decodeIfPresent(Bool.self, forKey: .fixedTarget) ?? false
     }
 }

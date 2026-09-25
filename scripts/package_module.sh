@@ -341,17 +341,17 @@ RACINE="$OUT/stage/dmg-$NAME"
 rm -rf "$RACINE"; mkdir -p "$RACINE"
 ditto "$STAGE" "$RACINE/$NAME"
 cat > "$RACINE/Installation.txt" <<TXTEOF
-$NAME $VERSION — module pour TreeLevel MC Engine
+$NAME $VERSION — module pour TreeLevel Tools
 
 Glissez le dossier « $NAME » dans :
 
-  ~/Library/Application Support/TreeLevel MC Engine/Modules/
+  ~/Library/Application Support/TreeLevel Tools/Modules/
 
 Dans le Finder : menu Aller > Aller au dossier…, puis collez le chemin ci-dessus.
 Créez le dossier Modules s'il n'existe pas encore. Gardez le nom « $NAME » tel quel :
 c'est ainsi que le moteur reconnaît le générateur.
 
-Relancez ensuite TreeLevel MC Engine une fois ; le générateur apparaît alors dans TreeLevel.
+Relancez ensuite TreeLevel Tools une fois ; le générateur apparaît alors dans TreeLevel.
 TXTEOF
 hdiutil create -quiet -volname "$NAME $VERSION" -srcfolder "$RACINE" -ov -format ULFO "$DMG"
 rm -rf "$RACINE"
