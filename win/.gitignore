@@ -1,5 +1,5 @@
 # Ce qui se reconstruit
-treelevel-mc/bin/
-treelevel-mc/obj/
+treelevel-tools/bin/
+treelevel-tools/obj/
 backends/pythia/build/
 package/out/

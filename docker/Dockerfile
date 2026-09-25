@@ -1,4 +1,4 @@
-# TreeLevel MC Engine — Herwig 7 and Sherpa 3 in a container.
+# TreeLevel Tools — Herwig 7 and Sherpa 3 in a container.
 #
 # Neither has a Windows build, and building them by hand asks a lot of anyone who just wants to shower a few
 # events. The image carries them ready to run, together with the engine itself, so that TreeLevel only has to

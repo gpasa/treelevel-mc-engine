@@ -6,7 +6,7 @@ import PackageDescription
 // Pythia driver built by Backends/pythia/Makefile, or Herwig's own command line), so nothing GPL is linked
 // into anything else.
 let package = Package(
-    name: "TreeLevelMCEngine",
+    name: "TreeLevelTools",
     platforms: [.macOS(.v13)],
     targets: [
         .executableTarget(name: "treelevel-tools", path: "Sources/treelevel-tools")
