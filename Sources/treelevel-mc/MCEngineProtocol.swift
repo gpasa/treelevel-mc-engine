@@ -173,7 +173,10 @@ public struct MCProcess: Codable, Equatable {
     /// between them. Nothing has to annihilate, which is why an electron and a proton make a perfectly
     /// good machine — HERA was one — and why leaving this family out would rule out a whole kind of
     /// collider rather than a mistaken setting.
-    public enum Channel: String, Codable, CaseIterable { case singleBoson, bosonPair, bosonExchange }
+    /// `qcd` is hard parton scattering, which is the bulk of what a proton ring makes: without it a hadron
+    /// machine produces Drell–Yan and nothing else, which is a channel rather than a collider. It diverges
+    /// as the transverse momentum goes to zero, so it is the one family that insists on a floor.
+    public enum Channel: String, Codable, CaseIterable { case singleBoson, bosonPair, bosonExchange, qcd }
     public var channels: [Channel] = [.singleBoson]
 
     public init(beams: [Int], beamEnergies: [Double], finalState: [Int],

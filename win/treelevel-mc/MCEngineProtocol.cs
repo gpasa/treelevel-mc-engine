@@ -131,8 +131,11 @@ public sealed class MCProcess
     /// <c>BosonPair</c> covers WW, ZZ and ZW, above their threshold, and needs the same. <c>BosonExchange</c> is
     /// the t channel: the two beams scatter off each other by passing a γ, a Z or a W between them. Nothing has
     /// to annihilate, which is why an electron and a proton make a perfectly good machine — HERA was one — and
+    /// <c>Qcd</c> is hard parton scattering, which is the bulk of what a proton ring makes: without it a hadron
+    /// machine produces Drell–Yan and nothing else, which is a channel rather than a collider. It diverges as the
+    /// transverse momentum goes to zero, so it is the one family that insists on a floor.
     /// why leaving this family out would rule out a whole kind of collider rather than a mistaken setting.</summary>
-    public enum Channel { SingleBoson, BosonPair, BosonExchange }
+    public enum Channel { SingleBoson, BosonPair, BosonExchange, Qcd }
 
     public int[] Beams { get; set; } = Array.Empty<int>();
     public double[] BeamEnergies { get; set; } = Array.Empty<double>();

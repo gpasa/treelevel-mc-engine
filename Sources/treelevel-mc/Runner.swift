@@ -138,9 +138,18 @@ struct Runner {
             switch canal {
             case .singleBoson, .bosonPair: return annihilent
             case .bosonExchange: return true
+            // La QCD dure veut des partons des deux côtés, c'est-à-dire deux hadrons.
+            case .qcd: return hadronic[0] && hadronic[1]
             }
         }
         if ouvertes.isEmpty && !p.channels.isEmpty {
+            // Nommer l'obstacle qui est vraiment là. Demander de la QCD dure entre deux leptons n'est pas un
+            // défaut d'annihilation — e⁺ et e⁻ s'annihilent très bien — c'est une absence de partons, et dire
+            // l'un pour l'autre envoie chercher au mauvais endroit.
+            if p.channels.allSatisfy({ $0 == .qcd }) {
+                return "beams \(p.beams[0]) and \(p.beams[1]) carry no partons, so hard QCD has nothing to "
+                     + "scatter — that family wants two hadrons"
+            }
             return "beams \(p.beams[0]) and \(p.beams[1]) cannot annihilate, so the channels asked for "
                  + "(ff̄ → γ*/Z, ff̄ → VV) have nothing to work with — these two scatter rather than "
                  + "annihilate, which is the boson-exchange family"
@@ -189,9 +198,19 @@ struct Runner {
                 // Q² tend vers zéro ; Pythia pose son propre plancher (`pTHatMinDiverge`) faute de mieux,
                 // et une coupure explicite le remplace dès qu'on en donne une.
                 lines += ["WeakBosonExchange:ff2ff(t:gmZ) = on", "WeakBosonExchange:ff2ff(t:W) = on"]
+            case .qcd:
+                // La diffusion dure de partons : l'essentiel de ce que produit un anneau à protons. Sans
+                // elle, une machine hadronique ne donne que du Drell–Yan, ce qui est un canal et non un
+                // collisionneur.
+                lines.append("HardQCD:all = on")
             }
         }
-        if let pt = p.minimumPT, pt > 0 { lines.append("PhaseSpace:pTHatMin = \(pt)") }
+        // La section efficace QCD croît sans borne quand l'impulsion transverse tend vers zéro : cette
+        // famille-là exige donc un plancher. S'il en est donné un, on l'emploie ; sinon vingt GeV, ce qui
+        // garde l'échantillon de diffusion dure qu'on voulait voir plutôt qu'un échantillon mou énorme.
+        var plancher = p.minimumPT
+        if (plancher ?? 0) <= 0, p.channels.contains(.qcd) { plancher = 20 }
+        if let pt = plancher, pt > 0 { lines.append("PhaseSpace:pTHatMin = \(pt)") }
         return lines.joined(separator: "\n")
     }
 

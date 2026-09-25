@@ -170,9 +170,19 @@ public sealed class Runner
                     s.Append("WeakBosonExchange:ff2ff(t:gmZ) = on\n");
                     s.Append("WeakBosonExchange:ff2ff(t:W) = on\n");
                     break;
+                case MCProcess.Channel.Qcd:
+                    // Hard parton scattering: the bulk of what a proton ring makes. Without it a hadron machine
+                    // produces Drell–Yan and nothing else, which is a channel rather than a collider.
+                    s.Append("HardQCD:all = on\n");
+                    break;
             }
         }
-        if (p.MinimumPT is double pt && pt > 0) s.Append($"PhaseSpace:pTHatMin = {N(pt)}\n");
+        // The QCD cross section grows without bound as the transverse momentum goes to zero, so that family
+        // insists on a floor: given one, it is used; given none, twenty GeV, which keeps the sample the hard
+        // scattering one meant to look at rather than an enormous soft one.
+        double? floor = p.MinimumPT;
+        if (floor is null or <= 0 && p.Channels.Contains(MCProcess.Channel.Qcd)) floor = 20;
+        if (floor is double pt && pt > 0) s.Append($"PhaseSpace:pTHatMin = {N(pt)}\n");
         return s.ToString();
     }
 
@@ -184,8 +194,20 @@ public sealed class Runner
         if (p.Channels.Length == 0) return null;
         bool hadronic0 = Math.Abs(p.Beams[0]) > 100, hadronic1 = Math.Abs(p.Beams[1]) > 100;
         bool annihilate = (hadronic0 && hadronic1) || p.Beams[0] == -p.Beams[1];
-        bool open = p.Channels.Any(c => c == MCProcess.Channel.BosonExchange || annihilate);
+        // Hard QCD wants partons on both sides, which is to say two hadrons; the t channel asks for nothing.
+        bool open = p.Channels.Any(c => c switch
+        {
+            MCProcess.Channel.BosonExchange => true,
+            MCProcess.Channel.Qcd => hadronic0 && hadronic1,
+            _ => annihilate,
+        });
         if (open) return null;
+        // Name the obstacle that is actually there. Asking for hard QCD between two leptons is not a failure to
+        // annihilate — e⁺ and e⁻ annihilate perfectly well — it is an absence of partons, and saying the wrong
+        // thing sends whoever reads it looking in the wrong place.
+        if (p.Channels.All(c => c == MCProcess.Channel.Qcd))
+            return $"beams {p.Beams[0]} and {p.Beams[1]} carry no partons, so hard QCD has nothing to scatter "
+                 + "— that family wants two hadrons";
         return $"beams {p.Beams[0]} and {p.Beams[1]} cannot annihilate, so the channels asked for "
              + "(ff̄ → γ*/Z, ff̄ → VV) have nothing to work with — these two scatter "
              + "rather than annihilate, which is the boson-exchange family";
