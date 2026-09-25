@@ -113,7 +113,11 @@ public sealed class Runner
         settings.Append($"Random:seed = {seed % 900_000_000}\n");
         settings.Append($"PartonLevel:ISR = {(job.Shower ? "on" : "off")}\n");
         settings.Append($"PartonLevel:FSR = {(job.Shower ? "on" : "off")}\n");
-        settings.Append($"PartonLevel:MPI = {(job.MultipleInteractions ? "on" : "off")}\n");
+        // The whole cross section is built out of the multiple interactions — its non-diffractive part is made
+        // of them — so asking for it turns them on whatever the job says. Written here rather than beside the
+        // channel that needs it, because this line comes later and would otherwise put them back off.
+        bool wholeCrossSection = channels?.Contains(MCProcess.Channel.Soft) ?? false;
+        settings.Append($"PartonLevel:MPI = {(job.MultipleInteractions || wholeCrossSection ? "on" : "off")}\n");
         settings.Append($"HadronLevel:all = {(job.Hadronisation ? "on" : "off")}\n");
         settings.Append($"HadronLevel:Decay = {(job.Decays ? "on" : "off")}\n");
         settings.Append("Print:quiet = on\n");
@@ -153,7 +157,8 @@ public sealed class Runner
             return Failed("one of the two configurations produced nothing — see engine.log", start);
 
         int written = Merge(Path.Combine(folder.Path, fileA), Path.Combine(folder.Path, fileB),
-                            folder.OutputPath(job), job.Events, sA, sB, errorA ?? 0, errorB ?? 0);
+                            folder.OutputPath(job), job.Events, sA, sB, errorA ?? 0, errorB ?? 0,
+                            job.HardProcess?.MixEqualShares ?? false);
         if (written <= 0) return Failed("the two samples could not be put together", start);
         foreach (var scratch in new[] { fileA, fileB })
             try { File.Delete(Path.Combine(folder.Path, scratch)); } catch (Exception) { }
@@ -172,15 +177,31 @@ public sealed class Runner
     /// <summary>Puts two HepMC3 samples together, keeping from each the share its cross section earns and taking
     /// them in turn so that the result reads as one sample rather than two stuck end to end.</summary>
     static int Merge(string a, string b, string @out, int wanted, double sigmaA, double sigmaB,
-                     double errorA, double errorB)
+                     double errorA, double errorB, bool equalShares)
     {
         var (header, eventsA) = Split(a);
         var (_, eventsB) = Split(b);
         if (eventsA.Count == 0 || eventsB.Count == 0) return 0;
         double total = sigmaA + sigmaB;
-        int fromA = Math.Clamp((int)Math.Round(wanted * sigmaA / total, MidpointRounding.AwayFromZero), 0, eventsA.Count);
-        int fromB = Math.Clamp(wanted - fromA, 0, eventsB.Count);
+        int fromA, fromB;
+        if (equalShares)
+        {
+            // Half from each, whatever their cross sections: the rarer configuration becomes visible instead of
+            // being a handful of events lost in the other. What the proportion loses in the counting it regains
+            // in the weights, so every sum over the sample is still a cross section.
+            fromA = Math.Min(wanted / 2, eventsA.Count);
+            fromB = Math.Min(wanted - fromA, eventsB.Count);
+        }
+        else
+        {
+            fromA = Math.Clamp((int)Math.Round(wanted * sigmaA / total, MidpointRounding.AwayFromZero), 0, eventsA.Count);
+            fromB = Math.Clamp(wanted - fromA, 0, eventsB.Count);
+        }
         if (fromA + fromB == 0) return 0;
+        // The weight an event carries so that the weights of each sample add up to its own cross section. In
+        // proportion they come out equal, and the sample stays one where every event counts for one.
+        double weightA = fromA > 0 ? sigmaA / fromA * (fromA + fromB) / total : 1;
+        double weightB = fromB > 0 ? sigmaB / fromB * (fromA + fromB) / total : 1;
 
         string attribute = $"A 0 GenCrossSection {E(total)} {E(Math.Sqrt(errorA * errorA + errorB * errorB))} -1 -1";
         using var writer = new StreamWriter(@out, false, MCEngineProtocol.Utf8);
@@ -193,6 +214,7 @@ public sealed class Runner
             bool takeA = takenA < fromA
                          && (takenB >= fromB || fromA == 0 || fromB == 0
                              || (double)takenA / fromA <= (double)takenB / fromB);
+            double weight = takeA ? weightA : weightB;
             foreach (var line in takeA ? eventsA[takenA++] : eventsB[takenB++])
             {
                 if (line.StartsWith("E ", StringComparison.Ordinal))
@@ -200,6 +222,7 @@ public sealed class Runner
                     var f = line.Split(' ', StringSplitOptions.RemoveEmptyEntries);
                     if (f.Length >= 4) { writer.WriteLine($"E {n} {f[2]} {f[3]}"); continue; }
                 }
+                if (line.StartsWith("W ", StringComparison.Ordinal)) { writer.WriteLine($"W {E(weight)}"); continue; }
                 if (line.StartsWith("A 0 GenCrossSection", StringComparison.Ordinal)) { writer.WriteLine(attribute); continue; }
                 writer.WriteLine(line);
             }
@@ -294,6 +317,16 @@ public sealed class Runner
                     // produces Drell–Yan and nothing else, which is a channel rather than a collider.
                     s.Append("HardQCD:all = on\n");
                     break;
+                case MCProcess.Channel.Soft:
+                    // Everything two hadrons do: elastic, diffractive, and the non-diffractive bulk. This is the
+                    // total cross section — a hundred millibarns at 13 TeV against the odd millibarn of hard
+                    // scattering — and it is the only setting under which "everything the beams make" is
+                    // literally true. It needs the multiple interactions, which are what build the
+                    // non-diffractive part, and it takes no transverse-momentum floor: a floor would cut away
+                    // precisely the soft part it is here to show.
+                    s.Append("SoftQCD:all = on\n");
+                    s.Append("PartonLevel:MPI = on\n");
+                    break;
                 case MCProcess.Channel.Photoproduction:
                     // The lepton enters as the flux of quasi-real photons it radiates, and those interact
                     // hadronically. This replaces the beam: Pythia's own accounting shows the annihilation and
@@ -312,6 +345,7 @@ public sealed class Runner
         bool needsFloor = p.Channels.Contains(MCProcess.Channel.Qcd)
                        || p.Channels.Contains(MCProcess.Channel.Photoproduction);
         if (floor is null or <= 0 && needsFloor) floor = 20;
+        if (p.Channels.Contains(MCProcess.Channel.Soft)) floor = null;
         if (floor is double pt && pt > 0) s.Append($"PhaseSpace:pTHatMin = {N(pt)}\n");
         return s.ToString();
     }
@@ -322,6 +356,13 @@ public sealed class Runner
     static string? ColliderObjection(MCProcess p)
     {
         if (p.Channels.Length == 0) return null;
+        // The soft family already contains the hard scattering: its non-diffractive part builds it out of the
+        // multiple interactions. Running both counts the same events twice, which no warning afterwards can
+        // undo, so the two are refused together.
+        if (p.Channels.Contains(MCProcess.Channel.Soft) && p.Channels.Contains(MCProcess.Channel.Qcd))
+            return "the whole cross section already contains the hard scattering — its non-diffractive part "
+                 + "builds it from the multiple interactions — so asking for both counts the same events twice. "
+                 + "Choose the whole cross section, or the hard scattering above a transverse-momentum floor";
         bool hadronic0 = Math.Abs(p.Beams[0]) > 100, hadronic1 = Math.Abs(p.Beams[1]) > 100;
         bool annihilate = (hadronic0 && hadronic1) || p.Beams[0] == -p.Beams[1];
         // Hard QCD wants partons on both sides, which is to say two hadrons; the t channel asks for nothing; and
@@ -329,7 +370,7 @@ public sealed class Runner
         bool open = p.Channels.Any(c => c switch
         {
             MCProcess.Channel.BosonExchange => true,
-            MCProcess.Channel.Qcd => hadronic0 && hadronic1,
+            MCProcess.Channel.Qcd or MCProcess.Channel.Soft => hadronic0 && hadronic1,
             MCProcess.Channel.Photoproduction => !hadronic0 || !hadronic1,
             _ => annihilate,
         });

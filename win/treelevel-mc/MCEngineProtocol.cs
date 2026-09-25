@@ -140,7 +140,7 @@ public sealed class MCProcess
     /// machine produces Drell–Yan and nothing else, which is a channel rather than a collider. It diverges as the
     /// transverse momentum goes to zero, so it is the one family that insists on a floor.
     /// why leaving this family out would rule out a whole kind of collider rather than a mistaken setting.</summary>
-    public enum Channel { SingleBoson, BosonPair, BosonExchange, Qcd, Photoproduction }
+    public enum Channel { SingleBoson, BosonPair, BosonExchange, Qcd, Photoproduction, Soft }
 
     public int[] Beams { get; set; } = Array.Empty<int>();
     public double[] BeamEnergies { get; set; } = Array.Empty<double>();
@@ -166,6 +166,12 @@ public sealed class MCProcess
     /// section earns, which is what an experiment actually sees. Without it, the combination is refused rather
     /// than silently resolved in favour of one.</summary>
     public bool MixConfigurations { get; set; }
+
+    /// <summary>How the two configurations share the sample when they are mixed. False, the default, gives each
+    /// the share its cross section earns, so the sample is what the machine makes and every event counts for one.
+    /// True gives them half each and puts the proportion in the weights instead, which is how one gets a decent
+    /// look at the rarer of the two — at the price of a sample where events no longer count for one.</summary>
+    public bool MixEqualShares { get; set; }
 
     [JsonIgnore]
     public double CentreOfMassEnergy => BeamEnergies.Sum();
