@@ -6,7 +6,7 @@
 #
 #   cmake -B build -S . -DPYTHIA8_DIR=C:/src/pythia8318
 #   cmake --build build --config Release
-#   cmake --install build --prefix "$env:LOCALAPPDATA/TreeLevel MC Engine/Modules/pythia8"
+#   cmake --install build --prefix "$env:LOCALAPPDATA/TreeLevel Tools/Modules/pythia8"
 #
 # win/backends/pythia/build.ps1 does the three of them.
 #

@@ -1,7 +1,7 @@
 using System.Text.Json;
 using TreeLevel.MC;
 
-// TreeLevel MC Engine (Windows) — runs a parton shower and hadronisation on the parton-level events of a
+// TreeLevel Tools (Windows) — runs a parton shower and hadronisation on the parton-level events of a
 // TreeLevel job. The same protocol and the same commands as the macOS engine.
 //
 //   treelevel-mc run <job folder>              read job.json, produce events.hepmc, keep status.json up to date
@@ -34,7 +34,7 @@ if (args.Length == 0)
 switch (args[0])
 {
     case "version":
-        Console.WriteLine($"TreeLevel MC Engine {EngineVersion}");
+        Console.WriteLine($"TreeLevel Tools {EngineVersion}");
         return 0;
 
     case "capabilities":

@@ -59,7 +59,7 @@ public sealed class Runner
         {
             Number = number, Started = start, Finished = DateTimeOffset.Now,
             EventsWritten = events.Events.Count, CrossSection = events.CrossSection,
-            GeneratorVersion = $"TreeLevel MC Engine {engineVersion} (sans gerbe)",
+            GeneratorVersion = $"TreeLevel Tools {engineVersion} (sans gerbe)",
             Progress = 1, Seconds = (DateTimeOffset.Now - start).TotalSeconds,
         });
         return true;
@@ -620,7 +620,7 @@ public sealed class Runner
     static string Missing(string generator)
         => Installation.Native
             ? $"{generator} is not installed in this image"
-            : $"{generator} has no Windows build: it runs in the TreeLevel MC Engine container, which is not installed";
+            : $"{generator} has no Windows build: it runs in the TreeLevel Tools container, which is not installed";
 
     /// <summary>Herwig and Sherpa on Windows: the job folder is bind-mounted at <c>/job</c> and the engine
     /// inside the image runs the very same code on it. The container owns the folder while it works — it

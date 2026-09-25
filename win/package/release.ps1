@@ -1,7 +1,7 @@
 ﻿# Assembles what a user of TreeLevel downloads on Windows: the engine and the Pythia 8 module, in one folder
 # to unpack. Herwig and Sherpa are not here — they come in the container image.
 #
-#   .\release.ps1 -Pythia "$env:LOCALAPPDATA\TreeLevel MC Engine\src\pythia8318"
+#   .\release.ps1 -Pythia "$env:LOCALAPPDATA\TreeLevel Tools\src\pythia8318"
 #   .\release.ps1 -Pythia <sources> -Arch x64 -NoPdfData
 #   .\release.ps1 -EngineOnly                     # no Pythia module, for a quick build
 #
@@ -37,7 +37,7 @@ $version = (Select-String -Path (Join-Path $root 'treelevel-mc\treelevel-mc.cspr
 if (-not $version) { Fail 'no <Version> in treelevel-mc.csproj' }
 
 $out = Join-Path $PSScriptRoot 'out'
-$staging = Join-Path $out "TreeLevel MC Engine"
+$staging = Join-Path $out "TreeLevel Tools"
 if (Test-Path $staging) { Remove-Item $staging -Recurse -Force }
 New-Item -ItemType Directory -Force -Path $staging | Out-Null
 
@@ -65,11 +65,11 @@ if (-not $EngineOnly) {
 # --- what goes with it --------------------------------------------------------------------------------------
 Copy-Item (Join-Path $repo 'LICENSE') (Join-Path $staging 'LICENSE.txt') -ErrorAction SilentlyContinue
 @"
-TreeLevel MC Engine $version — $Arch
+TreeLevel Tools $version — $Arch
 
 Installation
 ------------
-Déplacez ce dossier « TreeLevel MC Engine » dans :
+Déplacez ce dossier « TreeLevel Tools » dans :
 
     %LOCALAPPDATA%\Programs\
 
@@ -83,7 +83,7 @@ Ce qu'il contient
 
 Pour vérifier depuis une console :
 
-    "%LOCALAPPDATA%\Programs\TreeLevel MC Engine\treelevel-mc.exe" capabilities
+    "%LOCALAPPDATA%\Programs\TreeLevel Tools\treelevel-mc.exe" capabilities
 
 Herwig 7 et Sherpa 3
 --------------------
@@ -99,7 +99,7 @@ construites par win/backends/pythia du dépôt https://github.com/gpasa/treeleve
 "@ | Set-Content (Join-Path $staging 'LISEZMOI.txt') -Encoding utf8
 
 # --- the archive --------------------------------------------------------------------------------------------
-$zip = Join-Path $out "TreeLevelMCEngine-$version-$Arch.zip"
+$zip = Join-Path $out "TreeLevelTools-$version-$Arch.zip"
 if (Test-Path $zip) { Remove-Item $zip -Force }
 Compress-Archive -Path $staging -DestinationPath $zip -CompressionLevel Optimal
 if (-not $KeepStaging) { Remove-Item (Join-Path $out "publish-$Arch") -Recurse -Force -ErrorAction SilentlyContinue }

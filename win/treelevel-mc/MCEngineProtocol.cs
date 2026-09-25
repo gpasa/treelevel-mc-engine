@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Shared between TreeLevel and TreeLevel MC Engine — keep this copy and TreeLevel's
+// Shared between TreeLevel and TreeLevel Tools — keep this copy and TreeLevel's
 // (src/FeynCore/Events/MCEngine.cs) identical, as the Swift Protocol/MCEngineProtocol.swift is on macOS.
 // Copyright (c) 2026 Guglielmo Pasa. Permission is hereby granted, free of charge, to any person obtaining a
 // copy of this file, to deal in it without restriction, provided this notice is kept.
@@ -10,7 +10,7 @@ using System.Text.Json.Serialization;
 
 namespace TreeLevel.MC;
 
-/// <summary>Exchange format between TreeLevel and the external "TreeLevel MC Engine": a job folder holding the
+/// <summary>Exchange format between TreeLevel and the external "TreeLevel Tools": a job folder holding the
 /// job description, the parton-level events written by TreeLevel, the status the engine updates as it runs and
 /// the showered events it produces. Everything stays on the machine — nothing is uploaded anywhere.</summary>
 public static class MCEngineProtocol

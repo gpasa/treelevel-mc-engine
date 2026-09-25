@@ -1,4 +1,4 @@
-# TreeLevel MC Engine — Windows
+# TreeLevel Tools — Windows
 
 La même chose que sur macOS : TreeLevel écrit un dossier de travail, ce programme y fait tourner un générateur
 et réécrit les événements en HepMC3. Le protocole est identique au bit près — un dossier écrit sur un Mac se
@@ -34,7 +34,7 @@ dotnet publish -c Release -r win-arm64   # ou win-x64
 ```
 
 Le résultat est un seul exécutable, `treelevel-mc.exe`. TreeLevel le cherche à côté de lui, dans
-`%LOCALAPPDATA%\Programs\TreeLevel MC Engine`, dans `%ProgramFiles%\TreeLevel MC Engine`, dans votre dossier
+`%LOCALAPPDATA%\Programs\TreeLevel Tools`, dans `%ProgramFiles%\TreeLevel Tools`, dans votre dossier
 personnel, puis dans le PATH.
 
 > TreeLevel est empaqueté en MSIX, et un paquet MSIX détourne les écritures dans `%LOCALAPPDATA%` vers son
@@ -52,17 +52,17 @@ inclut sans condition et dont `Plugins.cc` se sert pour charger des greffons —
 ```powershell
 # 1. les sources, depuis https://pythia.org (n'importe quelle version 8.3)
 curl.exe -L -o pythia8318.tar.gz https://gitlab.com/Pythia8/releases/-/archive/pythia8318/releases-pythia8318.tar.gz
-mkdir "$env:LOCALAPPDATA\TreeLevel MC Engine\src"
-tar.exe xzf pythia8318.tar.gz -C "$env:LOCALAPPDATA\TreeLevel MC Engine\src"
+mkdir "$env:LOCALAPPDATA\TreeLevel Tools\src"
+tar.exe xzf pythia8318.tar.gz -C "$env:LOCALAPPDATA\TreeLevel Tools\src"
 
 # 2. le module
 cd win\backends\pythia
-.\build.ps1 -Pythia "$env:LOCALAPPDATA\TreeLevel MC Engine\src\pythia8318"
+.\build.ps1 -Pythia "$env:LOCALAPPDATA\TreeLevel Tools\src\pythia8318"
 ```
 
 Le script trouve Visual Studio et son CMake tout seul, construit pour l'architecture de la machine (`-Arch x64`
 ou `-Arch arm64` pour en changer) et installe le pilote **et son `xmldoc`** dans
-`%LOCALAPPDATA%\TreeLevel MC Engine\Modules\pythia8`, où le moteur va les chercher. Le runtime C++ est lié
+`%LOCALAPPDATA%\TreeLevel Tools\Modules\pythia8`, où le moteur va les chercher. Le runtime C++ est lié
 statiquement : le module tourne sur une machine sans redistribuable Visual C++.
 
 Les 107 unités de compilation de Pythia prennent quelques minutes la première fois.
@@ -122,8 +122,8 @@ exactement la recette de l'image, en plus long — d'où l'image.
 
 ## Différences avec macOS
 
-* Les chemins du support sont `%LOCALAPPDATA%\TreeLevel MC Engine\` au lieu de
-  `~/Library/Application Support/TreeLevel MC Engine/`.
+* Les chemins du support sont `%LOCALAPPDATA%\TreeLevel Tools\` au lieu de
+  `~/Library/Application Support/TreeLevel Tools/`.
 * Le moteur est écrit en C# plutôt qu'en Swift ; le protocole, lui, est le même fichier de part et d'autre
   (`MCEngineProtocol.cs` ↔ `Protocol/MCEngineProtocol.swift`), y compris la forme exacte du JSON que
   `Codable` produit : clés en camel, énumérations en minuscules, dates en secondes depuis le 1er janvier 2001.
