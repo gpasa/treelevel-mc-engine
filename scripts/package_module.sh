@@ -143,8 +143,14 @@ fix() {
     esac
   done
 }
-for f in "$VENDOR"/*; do
-  [ -f "$f" ] && is_macho "$f" && install_name_tool -id "@rpath/$(basename "$f")" "$f" 2>/dev/null || true
+# L'identité d'une bibliothèque est un chemin, elle aussi : celle que la compilation a posée désigne le
+# préfixe de construction, qui n'existera pas chez l'utilisateur. On la réécrit pour toutes, pas seulement
+# pour les embarquées — CalcHEP livre des .so dont l'identité pointait encore vers l'arbre d'origine.
+for f in $(machos "$STAGE"); do
+  is_macho "$f" || continue
+  case "$(otool -D "$f" 2>/dev/null | tail -1)" in
+    /*) install_name_tool -id "@rpath/$(basename "$f")" "$f" 2>/dev/null || true ;;
+  esac
 done
 for f in $(machos "$STAGE"); do is_macho "$f" && fix "$f"; done
 
@@ -164,6 +170,56 @@ text = re.sub(r"^\s*CALCHEP=" + re.escape(prefix) + r"\s*$",
               'CALCHEP=$(cd "$(dirname "$0")" && pwd)', text, count=1, flags=re.M)
 open(path, "w", encoding="utf-8").write(text)
 PYEOF
+  # Les scripts de CalcHEP ne protègent pas leurs chemins : posés dans « …/Application Support/TreeLevel MC
+  # Engine/Modules/calchep3 », chaque espace coupe un mot et tout échoue avec « No such file or directory ».
+  # Sans cela CalcHEP ne peut vivre ni dans le dossier de support, ni dans le paquet de l'application, dont
+  # le nom porte lui aussi des espaces. On protège donc les trois variables de chemin, en laissant les
+  # jokers dehors pour qu'ils s'étendent encore.
+  for f in "$STAGE/mkWORKdir" "$STAGE/calchep_batch" "$STAGE/calchep" "$STAGE/bin/run_batch" "$STAGE/sbin/ld_n"; do
+    [ -f "$f" ] || continue
+    python3 - "$f" <<'PYEOF'
+import re, sys
+path = sys.argv[1]
+texte = open(path, encoding="utf-8", errors="surrogateescape").read()
+# run_batch est un script Perl, et « \$CALCHEP/… » vit dans un heredoc : l'échappement le fait traverser
+# Perl pour arriver littéral dans le script engendré. Poser un guillemet devant donnerait « \"$CALCHEP" »,
+# où Perl interpole alors sa *propre* variable, vide, et le chemin disparaît — le script produit appelle
+# « ""/bin/s_calchep ». Les guillemets doivent donc être échappés comme la variable. Seuls les emplois en
+# chemin (suivis d'une barre) sont touchés ; la prose des pages d'aide reste telle quelle.
+texte = re.sub(r'(?<!")\\\$(CALCHEP|USR)\b(?=/)', r'\\"\\$\1\\"', texte)
+# « $CALCHEP/chose » → « "$CALCHEP"/chose » : le guillemet s'arrête avant la barre, donc *.mdl glob encore.
+texte = re.sub(r'(?<![\\"])\$(CALCHEP|USR)\b(?!")', r'"$\1"', texte)
+# Le même heredoc grave le chemin en clair par une variable Perl : « CALCHEP=$CH_PATH ». Sans guillemets,
+# un espace le couperait dès la première ligne du script engendré.
+texte = texte.replace('CALCHEP=$CH_PATH\n', 'CALCHEP="$CH_PATH"\n')
+# Puis les arguments de position employés comme chemins.
+texte = re.sub(r'\b(mkdir|cd|cp -r|cp)\s+\$1\b', r'\1 "$1"', texte)
+# mkWORKdir *engendre* deux scripts par un echo entre guillemets : « CALCHEP=$CALCHEP » y devient la
+# valeur nue, espaces compris. Il faut que les guillemets arrivent dans le fichier produit, donc les
+# échapper ici.
+texte = texte.replace('CALCHEP="$CALCHEP"\n', 'CALCHEP=\\"$CALCHEP\\"\n')
+open(path, "w", encoding="utf-8", errors="surrogateescape").write(texte)
+PYEOF
+  done
+  echo "  chemins protégés dans les scripts"
+
+  # Les greffons de lib/ (sqme_aux.so, lhapdf.so) portent désormais un nom d'installation « @rpath/… », pour
+  # qu'ils suivent le module. Mais leur consommateur, n_calchep, n'est pas construit ici : CalcHEP le lie à
+  # chaque processus par sbin/ld_n, qui ne pose aucun rpath. Sans cela le binaire se charge sur « no
+  # LC_RPATH's found ». On donne donc à ld_n les deux chemins qu'il connaît : la bibliothèque du module et
+  # le dossier du processus, où atterrissent les greffons engendrés.
+  if [ -f "$STAGE/sbin/ld_n" ] && ! grep -q -- "-rpath" "$STAGE/sbin/ld_n"; then
+    python3 - "$STAGE/sbin/ld_n" <<'PYEOF2'
+import sys
+chemin = sys.argv[1]
+texte = open(chemin, encoding="utf-8").read()
+texte = texte.replace('$CC   $CFLAGS   -o n_calchep',
+                      '$CC   $CFLAGS   -Wl,-rpath,"$cLib" -Wl,-rpath,"$PWD"   -o n_calchep', 1)
+open(chemin, "w", encoding="utf-8").write(texte)
+PYEOF2
+    echo "  rpath posé dans sbin/ld_n"
+  fi
+
   # Le compilateur invoqué pour chaque nouveau processus doit exister chez l'utilisateur : `cc` des outils
   # Xcode, et non le gcc de MacPorts, qui ne part pas avec nous.
   for f in "$STAGE/FlagsForMake" "$STAGE/FlagsForSh"; do
@@ -175,13 +231,22 @@ say "Chemins de construction dans les fichiers texte"
 # configure grave son préfixe dans des fichiers de données (Herwig : defaults/PDF.in). Le remplacer par un
 # jeton que le moteur substituera à l'exécution — et, accessoirement, aucun chemin personnel ne part avec
 # le paquet.
+# Deux racines à effacer, pas une : le préfixe d'installation, et l'arbre de sources d'où la compilation
+# s'est faite. WHIZARD grave le second dans `bin/whizard-gml` — une branche de test qui ne s'exécutera
+# jamais chez l'utilisateur, mais un chemin personnel qui partirait avec le paquet, et que la vérification
+# refuse à juste titre. On remplace donc aussi tout ce qui pend sous notre racine de construction.
+BUILDROOT="$HOME/Library/TreeLevelMC"
 COUNT=0
 while IFS= read -r f; do
   grep -Iq . "$f" 2>/dev/null || continue          # -I : ignorer les fichiers binaires
+  ECRIT=0
   if grep -q "$PREFIX" "$f" 2>/dev/null; then
-    /usr/bin/sed -i '' "s|$PREFIX|@TREELEVEL_MODULE@|g" "$f"
-    COUNT=$((COUNT + 1))
+    /usr/bin/sed -i '' "s|$PREFIX|@TREELEVEL_MODULE@|g" "$f"; ECRIT=1
   fi
+  if grep -q "$BUILDROOT" "$f" 2>/dev/null; then
+    /usr/bin/sed -i '' "s|$BUILDROOT[^\"' ]*|@TREELEVEL_MODULE@|g" "$f"; ECRIT=1
+  fi
+  [ "$ECRIT" = 1 ] && COUNT=$((COUNT + 1))
 done < <(find "$STAGE" -type f ! -name '*.rpo' ! -name '*.dylib' ! -name '*.so' ! -name '*.a')
 echo "  $COUNT fichiers réécrits"
 
@@ -269,7 +334,27 @@ echo "  aucune dépendance hors du module, aucune manquante"
 say "Image disque"
 DMG="$OUT/$NAME-$VERSION-macos-$(uname -m).dmg"
 rm -f "$DMG"
-hdiutil create -quiet -volname "$NAME $VERSION" -srcfolder "$STAGE" -ov -format ULFO "$DMG"
+# L'image porte un dossier unique, nommé comme le module : l'utilisateur le glisse dans Modules/ et c'est
+# fini. Poser l'arbre à la racine du volume l'obligerait à créer le dossier lui-même, à l'orthographier
+# juste, et une faute ne se verrait qu'à l'absence du générateur dans la liste.
+RACINE="$OUT/stage/dmg-$NAME"
+rm -rf "$RACINE"; mkdir -p "$RACINE"
+ditto "$STAGE" "$RACINE/$NAME"
+cat > "$RACINE/Installation.txt" <<TXTEOF
+$NAME $VERSION — module pour TreeLevel MC Engine
+
+Glissez le dossier « $NAME » dans :
+
+  ~/Library/Application Support/TreeLevel MC Engine/Modules/
+
+Dans le Finder : menu Aller > Aller au dossier…, puis collez le chemin ci-dessus.
+Créez le dossier Modules s'il n'existe pas encore. Gardez le nom « $NAME » tel quel :
+c'est ainsi que le moteur reconnaît le générateur.
+
+Relancez ensuite TreeLevel MC Engine une fois ; le générateur apparaît alors dans TreeLevel.
+TXTEOF
+hdiutil create -quiet -volname "$NAME $VERSION" -srcfolder "$RACINE" -ov -format ULFO "$DMG"
+rm -rf "$RACINE"
 codesign --force --timestamp --sign "$IDENTITY" "$DMG"
 
 if [ "$NOTARIZE" = 1 ]; then

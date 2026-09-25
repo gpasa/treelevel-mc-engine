@@ -21,18 +21,23 @@ public enum MCEngineProtocol {
     public static let outputFileName = "events.hepmc"
     public static let logFileName = "engine.log"
     /// Bundle identifier of the engine application, and the URL scheme it answers to.
-    public static let bundleIdentifier = "org.pasahome.TreeLevelMCEngine"
+    ///
+    /// Le programme s'appelait « TreeLevel MC Engine » pendant son développement. Le nom ne disait plus
+    /// ce qu'il fait — il ne porte pas que des moteurs Monte-Carlo — et l'image qui offre les mêmes outils
+    /// s'appelle déjà `treelevel-tools`. Rien n'ayant été publié sous l'ancien nom, il n'en reste aucune
+    /// trace à ménager : pas de repli, pas de migration.
+    public static let bundleIdentifier = "org.pasahome.TreeLevelTools"
     public static let urlScheme = "treelevel-mc"
     /// Where the engine publishes what it can do, inside its own support folder.
     public static let capabilitiesFileName = "capabilities.json"
 
     /// TreeLevel is sandboxed: everything the two programs share lives in its container, which the engine —
     /// which is not sandboxed — can read and write. Seen from the engine, that is:
-    ///   ~/Library/Containers/org.pasahome.Feyn/Data/Library/Application Support/{MCJobs,TreeLevel MC Engine}
+    ///   ~/Library/Containers/org.pasahome.Feyn/Data/Library/Application Support/{MCJobs,TreeLevel Tools}
     /// Seen from TreeLevel, it is simply its own Application Support folder.
     public static let treeLevelBundleIdentifier = "org.pasahome.Feyn"
     public static let jobsFolderName = "MCJobs"
-    public static let supportFolderName = "TreeLevel MC Engine"
+    public static let supportFolderName = "TreeLevel Tools"
 
     /// Only meaningful in a process that is not sandboxed (the engine).
     public static var treeLevelSupportDirectory: URL {
@@ -131,8 +136,40 @@ public struct MCProcess: Codable, Equatable {
     /// Physics model. Only "SM" for now, but a generator that reads UFO files could take more.
     public var model: String
 
+    /// What we ask the machine for. In `exclusive` mode — the historic one — the generator produces the
+    /// diagram's process and nothing else, and its cross section *is* the answer. In `collider` mode it
+    /// opens whole families of hard channels, the way a real ring does: `finalState` then says what to look
+    /// for in the events rather than what to produce, and the measured cross section comes out of that
+    /// selection. The two disagree for an honest reason — a real machine cannot be told to make only one
+    /// thing — and showing them side by side is the point of the mode.
+    public enum Mode: String, Codable, CaseIterable { case exclusive, collider }
+    public var colliderMode: Mode = .exclusive
+
+    /// A fixed target: one beam moves, the other sits still in the laboratory.
+    ///
+    /// `beamEnergies[0]` is then the momentum of the moving beam and the second entry is ignored — the
+    /// target's energy is its own mass, and saying so exactly matters more than it looks: giving it a
+    /// number close to its mass leaves it a small momentum, and the collision energy is no longer quite
+    /// the one intended. What this buys is modest and worth seeing: 400 GeV on a proton at rest is a
+    /// 27 GeV machine, because only √(2 m E) of it is available.
+    public var fixedTarget = false
+
+    /// The families of hard channels left open in `collider` mode.
+    ///
+    /// `singleBoson` is annihilation — ff̄ → γ*/Z, ff̄' → W — and needs two beams that can annihilate.
+    /// `bosonPair` covers WW, ZZ and ZW, above their threshold, and needs the same.
+    /// `bosonExchange` is the t channel: the two beams scatter off each other by passing a γ, a Z or a W
+    /// between them. Nothing has to annihilate, which is why an electron and a proton make a perfectly
+    /// good machine — HERA was one — and why leaving this family out would rule out a whole kind of
+    /// collider rather than a mistaken setting.
+    public enum Channel: String, Codable, CaseIterable { case singleBoson, bosonPair, bosonExchange }
+    public var channels: [Channel] = [.singleBoson]
+
     public init(beams: [Int], beamEnergies: [Double], finalState: [Int],
-                couplingOrders: [String: Int] = [:], minimumPT: Double? = nil, model: String = "SM") {
+                couplingOrders: [String: Int] = [:], minimumPT: Double? = nil, model: String = "SM",
+                colliderMode: Mode = .exclusive, channels: [Channel] = [.singleBoson]) {
+        self.colliderMode = colliderMode
+        self.channels = channels
         self.beams = beams
         self.beamEnergies = beamEnergies
         self.finalState = finalState
@@ -143,6 +180,21 @@ public struct MCProcess: Codable, Equatable {
 
     /// Centre-of-mass energy of a head-on collision.
     public var centreOfMassEnergy: Double { beamEnergies.reduce(0, +) }
+
+    /// Written by hand because the two fields above arrived after job folders had already been saved: a
+    /// synthesised decoder would reject every one of them for a key that did not exist yet.
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        beams = try c.decode([Int].self, forKey: .beams)
+        beamEnergies = try c.decode([Double].self, forKey: .beamEnergies)
+        finalState = try c.decode([Int].self, forKey: .finalState)
+        couplingOrders = try c.decodeIfPresent([String: Int].self, forKey: .couplingOrders) ?? [:]
+        minimumPT = try c.decodeIfPresent(Double.self, forKey: .minimumPT)
+        model = try c.decodeIfPresent(String.self, forKey: .model) ?? "SM"
+        colliderMode = try c.decodeIfPresent(Mode.self, forKey: .colliderMode) ?? .exclusive
+        channels = try c.decodeIfPresent([Channel].self, forKey: .channels) ?? [.singleBoson]
+        fixedTarget = try c.decodeIfPresent(Bool.self, forKey: .fixedTarget) ?? false
+    }
 }
 
 /// How far the job has got; the engine rewrites it as it runs.
@@ -207,8 +259,11 @@ public struct MCJobFolder {
     @discardableResult
     public func write(job: MCJob, lheText: String) throws -> MCJob {
         try FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
-        // A generator that computes its own matrix elements is given the process, and no events to dress.
-        if job.generator.readsLesHouches {
+        // A generator that computes its own matrix elements is given the process, and no events to dress —
+        // et il en va de même d'un travail en mode collisionneur, qui produit les siens. Y déposer un
+        // fichier Les Houches vide ne tromperait personne longtemps, mais un moteur qui décide à la
+        // présence du fichier plutôt qu'au contenu du travail s'y laisserait prendre.
+        if job.generator.readsLesHouches, job.hardProcess?.colliderMode != .collider {
             try lheText.write(to: inputURL(job), atomically: true, encoding: .utf8)
         }
         try Self.encoder.encode(job).write(to: jobURL)

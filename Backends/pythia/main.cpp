@@ -156,7 +156,17 @@ int main(int argc, char* argv[]) {
   const std::string data = dataPath();
   Pythia8::Pythia pythia(data.empty() ? "../share/Pythia8/xmldoc" : data);
   if (!pythia.readFile(config)) { std::cerr << "cannot read " << config << std::endl; return 1; }
-  if (!pythia.init()) { std::cerr << "Pythia failed to initialise" << std::endl; return 1; }
+  if (!pythia.init()) {
+    // `Print:quiet` cache aussi les raisons de l'échec : Pythia imprime sa bannière puis se tait, et le
+    // journal ne dit rien de plus que « failed to initialise ». On recommence une fois en clair, pour que
+    // la raison — une grille de densités partoniques absente, un canal fermé — atteigne le journal.
+    std::cerr << "Pythia failed to initialise; retrying without Print:quiet to show why" << std::endl;
+    Pythia8::Pythia bavard(data.empty() ? "../share/Pythia8/xmldoc" : data);
+    bavard.readFile(config);
+    bavard.readString("Print:quiet = off");
+    bavard.init();
+    return 1;
+  }
 
 #ifdef TREELEVEL_WITH_HEPMC3
   Pythia8::Pythia8ToHepMC toHepMC(out);

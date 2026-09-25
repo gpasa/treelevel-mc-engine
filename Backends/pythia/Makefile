@@ -1,14 +1,14 @@
 # Builds the Pythia 8 driver of the engine.
 #
 #   make            build ./treelevel-pythia
-#   make install    copy it into ~/Library/Application Support/TreeLevel MC Engine/Modules/pythia8
+#   make install    copy it into ~/Library/Application Support/TreeLevel Tools/Modules/pythia8
 #
 # Pythia is found through pythia8-config when it is in the PATH, otherwise in the usual MacPorts and Homebrew
 # layouts. HepMC3 is not needed: the driver writes the HepMC3 file itself. If Pythia was built with its own
 # HepMC3 interface and you would rather use it, build with:  make WITH_HEPMC3=1
 CXX ?= c++
 CXXFLAGS ?= -O2 -std=c++17
-MODULES ?= $(HOME)/Library/Application Support/TreeLevel MC Engine/Modules/pythia8
+MODULES ?= $(HOME)/Library/Application Support/TreeLevel Tools/Modules/pythia8
 
 # Le pilote et son xmldoc doivent venir du même Pythia. Sans cela — une machine qui porte MacPorts et
 # Homebrew, l'un des deux désactivé, c'est courant — on lie 8.310 et on lui donne les données de 8.303 :
@@ -32,6 +32,12 @@ else
   $(error Pythia 8 not found — install it (MacPorts: sudo port install pythia) or put pythia8-config in the PATH)
 endif
 
+# Les grilles de densités partoniques vivent à côté du xmldoc. Sans elles Pythia refuse d'initialiser
+# un faisceau hadronique — et refuse en silence, après avoir imprimé sa bannière. Les faisceaux à
+# leptons n'en ont pas besoin, ce qui est exactement la raison pour laquelle l'absence est passée
+# inaperçue jusqu'au jour où le mode collisionneur a permis de choisir des protons.
+PDFDATA := $(wildcard $(dir $(XMLDOC))pdfdata)
+
 ifdef WITH_HEPMC3
   HEPMC := $(shell pkg-config --cflags --libs HepMC3 2>/dev/null)
   ifeq ($(strip $(HEPMC)),)
@@ -46,6 +52,14 @@ treelevel-pythia: main.cpp
 install: treelevel-pythia
 	mkdir -p "$(MODULES)"
 	cp treelevel-pythia "$(MODULES)/"
+	@if [ -n "$(PDFDATA)" ] && [ -d "$(PDFDATA)" ]; then \
+	  mkdir -p "$(MODULES)/share/Pythia8"; \
+	  rm -rf "$(MODULES)/share/Pythia8/pdfdata"; \
+	  /usr/bin/ditto "$(PDFDATA)" "$(MODULES)/share/Pythia8/pdfdata"; \
+	  echo "  pdfdata ($$(du -sh "$(PDFDATA)" | cut -f1)) depuis $(PDFDATA)"; \
+	else \
+	  echo "  ⚠ pdfdata introuvable : les faisceaux hadroniques ne s'initialiseront pas"; \
+	fi
 	@if [ -d "$(XMLDOC)" ]; then \
 	  mkdir -p "$(MODULES)/share/Pythia8"; \
 	  rm -rf "$(MODULES)/share/Pythia8/xmldoc"; \

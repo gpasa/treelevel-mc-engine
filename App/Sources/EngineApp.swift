@@ -63,7 +63,7 @@ final class EngineState: ObservableObject {
     static let shared = EngineState()
     @Published var entries: [JobHistory.Entry] = []
     @Published var capabilities: MCCapabilities?
-    let version = "0.2.0"
+    let version = "0.3.0"
 
 
     func refreshCapabilities() { capabilities = Installation.publishCapabilities(engineVersion: version) }
@@ -116,6 +116,16 @@ final class EngineState: ObservableObject {
 struct EngineWindow: View {
     @EnvironmentObject var state: EngineState
 
+    @State private var systemGenerators = Installation.allowsSystemGenerators
+    @State private var useContainer = Installation.allowsContainer
+
+    /// « WHIZARD 3 WHIZARD 3.1.4 » : la version porte souvent déjà le nom. On ne le répète pas.
+    static func describe(_ g: MCJob.Generator, version: String?) -> String {
+        guard let version, !version.isEmpty else { return g.label }
+        let premier = g.label.split(separator: " ").first.map(String.init) ?? g.label
+        return version.localizedCaseInsensitiveContains(premier) ? version : g.label + " " + version
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             Text("TreeLevel MC Engine").font(.title2.bold())
@@ -125,13 +135,29 @@ struct EngineWindow: View {
                 VStack(alignment: .leading, spacing: 4) {
                     if let caps = state.capabilities {
                         ForEach(caps.generators, id: \.rawValue) { g in
-                            Text("• \(g.label)" + (caps.versions[g.rawValue].map { " \($0)" } ?? ""))
+                            Text("• " + Self.describe(g, version: caps.versions[g.rawValue]))
                         }
                     } else {
                         Text("Aucun module trouvé.")
                     }
                     Text("Emplacement : ~/Library/Application Support/TreeLevel MC Engine/Modules")
                         .font(.callout).foregroundStyle(.secondary)
+                    Divider()
+                    Toggle("utiliser aussi les générateurs déjà installés sur cette machine",
+                           isOn: $systemGenerators)
+                        .onChange(of: systemGenerators) { permis in
+                            Installation.setAllowsSystemGenerators(permis)
+                            state.refreshCapabilities()
+                        }
+                    Text("Par défaut, seuls les générateurs livrés avec ce programme sont proposés : ce sont ceux dont les versions sont connues, et deux machines donnent alors le même résultat pour le même document. En cochant, un Herwig de Homebrew ou un WHIZARD de MacPorts deviennent utilisables — leur provenance est indiquée à côté de leur version.")
+                        .font(.callout).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                    Toggle("utiliser l'image Docker, si elle est présente", isOn: $useContainer)
+                        .onChange(of: useContainer) { permis in
+                            Installation.setAllowsContainer(permis)
+                            state.refreshCapabilities()
+                        }
+                    Text("L'image est l'autre manière d'avoir les générateurs : une commande au lieu d'une série d'installations. Ce n'est pas un filet sous les modules livrés — elle ne porte ni les mêmes versions ni les mêmes réglages — alors elle ne sert que si vous la demandez. WHIZARD 3 n'existe que par là sur macOS : il compile chaque processus avec gfortran, que le système ne fournit pas.")
+                        .font(.callout).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
             }

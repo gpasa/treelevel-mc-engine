@@ -16,14 +16,75 @@ enum Installation {
     static let modulePlaceholder = "@TREELEVEL_MODULE@"
 
     /// Folder holding the downloaded modules: ~/Library/Application Support/TreeLevel MC Engine/Modules.
+    /// Ce que le moteur s'autorise à chercher hors de ce qu'il livre lui-même.
+    ///
+    /// Par défaut : rien. Seuls comptent les modules embarqués dans l'application et ceux installés dans
+    /// son dossier de support. Se servir au passage d'un Herwig de Homebrew ou d'un WHIZARD de MacPorts
+    /// paraît accommodant, et c'est un piège : le même document donnerait deux sections efficaces sur
+    /// deux machines, sans que rien ne le signale — nous l'avons vu en direct, un WHIZARD 3.1.4 de
+    /// Homebrew proposé à la place du 3.1.6 livré.
+    ///
+    /// Qui veut ses propres installations le demande, dans la fenêtre du moteur ; l'étiquette de version
+    /// dit alors d'où vient chaque générateur.
+    static var allowsSystemGenerators: Bool {
+        let fichier = supportDirectory.appendingPathComponent("settings.json")
+        guard let data = try? Data(contentsOf: fichier),
+              let objet = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] else { return false }
+        return objet["allowSystemGenerators"] as? Bool ?? false
+    }
+
+    static func setAllowsSystemGenerators(_ allowed: Bool) {
+        let fichier = supportDirectory.appendingPathComponent("settings.json")
+        var objet: [String: Any] = [:]
+        if let data = try? Data(contentsOf: fichier),
+           let lu = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] { objet = lu }
+        objet["allowSystemGenerators"] = allowed
+        try? FileManager.default.createDirectory(at: supportDirectory, withIntermediateDirectories: true)
+        if let data = try? JSONSerialization.data(withJSONObject: objet, options: [.prettyPrinted]) {
+            try? data.write(to: fichier)
+        }
+    }
+
+    /// Si le conteneur peut servir de source de générateurs. Par défaut : non.
+    ///
+    /// L'image est *une autre manière* d'avoir les générateurs — celle de qui a déjà Docker et préfère
+    /// ne pas installer sept cents mégaoctets de binaires — et non un filet sous les modules livrés.
+    /// S'en servir d'office serait pire que commode : elle ne porte pas les mêmes versions ni les mêmes
+    /// réglages. Sherpa y annonçait 15,5 pb là où le module livré en donne 3,17, faute d'y avoir la même
+    /// correction sur les densités de l'électron. Un repli qui change la physique sans le dire est un
+    /// piège ; l'utilisateur choisit sa voie, et sait laquelle il a choisie.
+    static var allowsContainer: Bool {
+        let fichier = supportDirectory.appendingPathComponent("settings.json")
+        guard let data = try? Data(contentsOf: fichier),
+              let objet = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] else { return false }
+        return objet["allowContainer"] as? Bool ?? false
+    }
+
+    static func setAllowsContainer(_ allowed: Bool) {
+        let fichier = supportDirectory.appendingPathComponent("settings.json")
+        var objet: [String: Any] = [:]
+        if let data = try? Data(contentsOf: fichier),
+           let lu = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] { objet = lu }
+        objet["allowContainer"] = allowed
+        try? FileManager.default.createDirectory(at: supportDirectory, withIntermediateDirectories: true)
+        if let data = try? JSONSerialization.data(withJSONObject: objet, options: [.prettyPrinted]) {
+            try? data.write(to: fichier)
+        }
+    }
+
+    /// Les chemins d'un gestionnaire de paquets, s'ils sont permis ; rien sinon.
+    private static func system(_ paths: [String]) -> [URL] {
+        allowsSystemGenerators ? paths.map { URL(fileURLWithPath: $0) } : []
+    }
+
     static var modulesDirectory: URL {
         let base = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
-        return base.appendingPathComponent("TreeLevel MC Engine/Modules", isDirectory: true)
+        return base.appendingPathComponent(MCEngineProtocol.supportFolderName + "/Modules", isDirectory: true)
     }
 
     static var supportDirectory: URL {
         let base = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
-        let dir = base.appendingPathComponent("TreeLevel MC Engine", isDirectory: true)
+        let dir = base.appendingPathComponent(MCEngineProtocol.supportFolderName, isDirectory: true)
         try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         return dir
     }
@@ -33,9 +94,9 @@ enum Installation {
     static var pythiaDriver: URL? {
         var candidates = [URL(fileURLWithPath: CommandLine.arguments[0]).deletingLastPathComponent().appendingPathComponent("treelevel-pythia"),
                           modulesDirectory.appendingPathComponent("pythia8/treelevel-pythia"),
-                          URL(fileURLWithPath: "/opt/local/bin/treelevel-pythia"),      // MacPorts
-                          URL(fileURLWithPath: "/usr/local/bin/treelevel-pythia"),
-                          URL(fileURLWithPath: "/opt/homebrew/bin/treelevel-pythia")]
+]
+            + system(["/opt/local/bin/treelevel-pythia", "/usr/local/bin/treelevel-pythia",
+                      "/opt/homebrew/bin/treelevel-pythia"])
         if let resources = Bundle.main.resourceURL { candidates.insert(resources.appendingPathComponent("treelevel-pythia"), at: 1) }
         if let bundled = bundledModules { candidates.insert(bundled.appendingPathComponent("pythia8/treelevel-pythia"), at: 0) }
         return candidates.first { FileManager.default.isExecutableFile(atPath: $0.path) }
@@ -44,9 +105,8 @@ enum Installation {
     /// Herwig's command line (`Herwig read` then `Herwig run`).
     static var herwig: URL? {
         var candidates = [modulesDirectory.appendingPathComponent("herwig7/bin/Herwig"),
-                          URL(fileURLWithPath: "/opt/local/bin/Herwig"),                // MacPorts
-                          URL(fileURLWithPath: "/usr/local/bin/Herwig"),
-                          URL(fileURLWithPath: "/opt/homebrew/bin/Herwig")]
+]
+            + system(["/opt/local/bin/Herwig", "/usr/local/bin/Herwig", "/opt/homebrew/bin/Herwig"])
         if let bundled = bundledModules { candidates.insert(bundled.appendingPathComponent("herwig7/bin/Herwig"), at: 0) }
         return candidates.first { FileManager.default.isExecutableFile(atPath: $0.path) }
     }
@@ -54,9 +114,8 @@ enum Installation {
     /// Sherpa's command line. It computes its own matrix elements, so it needs no driver of ours.
     static var sherpa: URL? {
         var candidates = [modulesDirectory.appendingPathComponent("sherpa3/bin/Sherpa"),
-                          URL(fileURLWithPath: "/opt/local/bin/Sherpa"),                // MacPorts
-                          URL(fileURLWithPath: "/usr/local/bin/Sherpa"),
-                          URL(fileURLWithPath: "/opt/homebrew/bin/Sherpa")]
+]
+            + system(["/opt/local/bin/Sherpa", "/usr/local/bin/Sherpa", "/opt/homebrew/bin/Sherpa"])
         if let bundled = bundledModules { candidates.insert(bundled.appendingPathComponent("sherpa3/bin/Sherpa"), at: 0) }
         return candidates.first { FileManager.default.isExecutableFile(atPath: $0.path) }
     }
@@ -65,19 +124,29 @@ enum Installation {
     /// generates and compiles Fortran for each new process.
     static var whizard: URL? {
         var candidates = [modulesDirectory.appendingPathComponent("whizard3/bin/whizard"),
-                          URL(fileURLWithPath: "/opt/local/bin/whizard"),                // MacPorts
-                          URL(fileURLWithPath: "/usr/local/bin/whizard"),
-                          URL(fileURLWithPath: "/opt/homebrew/bin/whizard")]
+]
+            + system(["/opt/local/bin/whizard", "/usr/local/bin/whizard", "/opt/homebrew/bin/whizard"])
         if let bundled = bundledModules { candidates.insert(bundled.appendingPathComponent("whizard3/bin/whizard"), at: 0) }
         return candidates.first { FileManager.default.isExecutableFile(atPath: $0.path) }
+    }
+
+    /// WHIZARD tel que l'utilisateur l'a installé lui-même, jamais celui que nous livrons.
+    ///
+    /// Le nôtre ne peut pas tourner : il compile chaque processus avec gfortran, absent de macOS, et son
+    /// préfixe d'installation est gravé dans ses binaires. Celui d'un gestionnaire de paquets n'a ni l'un
+    /// ni l'autre problème — il est installé là où il croit être, et son compilateur est venu avec lui.
+    /// Il n'est donc proposé que si l'utilisateur a permis ses propres installations.
+    static var systemWhizard: URL? {
+        system(["/opt/local/bin/whizard", "/usr/local/bin/whizard", "/opt/homebrew/bin/whizard"])
+            .first { FileManager.default.isExecutableFile(atPath: $0.path) }
     }
 
     /// CalcHEP's tree. It is not a single program: a job runs in a working copy made by `mkWORKdir`,
     /// so what we look for is the root, and the version is the one its headers carry.
     static var calchep: URL? {
         var candidates = [modulesDirectory.appendingPathComponent("calchep3"),
-                          URL(fileURLWithPath: "/opt/local/share/calchep"),
-                          URL(fileURLWithPath: NSHomeDirectory()).appendingPathComponent("calchep")]
+]
+            + system(["/opt/local/share/calchep", NSHomeDirectory() + "/calchep"])
         if let bundled = bundledModules { candidates.insert(bundled.appendingPathComponent("calchep3"), at: 0) }
         return candidates.first { FileManager.default.isExecutableFile(atPath: $0.appendingPathComponent("mkWORKdir").path) }
     }
@@ -214,12 +283,27 @@ enum Installation {
             versions[MCJob.Generator.sherpa3.rawValue] = labelled(String(v).trimmingCharacters(in: .whitespaces), from: sherpa)
         }
         // WHIZARD prints its banner on --version and returns 0; the version is on the first line.
-        if let whizard, let v = Process.output(whizard, ["--version"])?.split(separator: "\n")
+        // WHIZARD : seulement celui de l'utilisateur, si les installations du système sont permises.
+        if let w = systemWhizard, let v = Process.output(w, ["--version"])?.split(separator: "\n")
                                        .first(where: { $0.lowercased().contains("whizard") }),
            !v.contains("dyld"), !v.contains("not loaded"), majorVersion(in: String(v)) == 3 {
             generators.append(.whizard3)
-            versions[MCJob.Generator.whizard3.rawValue] = labelled(String(v).trimmingCharacters(in: .whitespaces), from: whizard)
+            versions[MCJob.Generator.whizard3.rawValue] = labelled(String(v).trimmingCharacters(in: .whitespaces), from: w)
         }
+        // Celui que *nous* livrons n'est pas proposé, et ce n'est pas un oubli.
+        //
+        // Il n'exécute pas un processus, il l'écrit en Fortran et le **compile** — un `gfortran` par
+        // travail. macOS n'en fournit pas, Xcode non plus : sur la machine de qui l'installe, il n'y a
+        // simplement rien pour compiler. CalcHEP fait de même en C, et s'en tire parce que `cc` arrive
+        // avec les outils Xcode ; le Fortran n'a pas cet équivalent. S'y ajoute que WHIZARD grave son
+        // préfixe d'installation dans ses binaires : relogé, il cherche ses modèles, son omega et ses
+        // fichiers .mod là où il a été construit.
+        //
+        // Le binaire répond pourtant à `--version`, et le sonder suffirait à le déclarer présent — pour
+        // qu'il échoue au premier travail, sur un message incompréhensible. On préfère qu'il ne soit
+        // offert que là où il fonctionne : dans le conteneur, qui porte son compilateur et ses chemins.
+        // Rendre le natif possible demande de le reconstruire relogeable et d'exiger gfortran ; c'est
+        // une décision de version, pas un correctif.
         if let calchep, let v = calchepVersion(calchep) {
             generators.append(.calchep3)
             versions[MCJob.Generator.calchep3.rawValue] = labelled(v, from: calchep)
@@ -234,7 +318,8 @@ enum Installation {
     /// ils viennent, pour que personne ne s'étonne d'un numéro de version différent.
     static func capabilities(engineVersion: String) -> MCCapabilities {
         var caps = nativeCapabilities(engineVersion: engineVersion)
-        guard MCJob.Generator.allCases.contains(where: { !caps.generators.contains($0) }),
+        guard allowsContainer,
+              MCJob.Generator.allCases.contains(where: { !caps.generators.contains($0) }),
               let container = container(engineVersion: engineVersion),
               let fromImage = imageCapabilities(container.docker, container.image) else { return caps }
         for generator in fromImage.generators where !caps.generators.contains(generator) {

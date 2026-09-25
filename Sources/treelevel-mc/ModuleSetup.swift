@@ -88,7 +88,33 @@ enum ModuleSetup {
         return environment
     }
 
+    /// Où Sherpa doit chercher ses propres greffons, ses données et ses en-têtes.
+    ///
+    /// Sans cela il les charge depuis l'arbre où il a été *construit*, dont le chemin est gravé à la
+    /// compilation — et ces greffons-là tirent le libstdc++ du gestionnaire de paquets, pendant que les
+    /// binaires du module utilisent celui qu'ils emportent. Deux bibliothèques standard C++ dans un même
+    /// processus, deux jeux de symboles, et une chaîne allouée par l'une que l'autre libère :
+    /// « pointer being freed was not allocated », au beau milieu de l'initialisation du modèle standard.
+    /// Chez l'utilisateur, qui n'a pas cet arbre de construction, la panne serait différente mais réelle.
+    static func sherpaEnvironment(binary: URL) -> [String: String] {
+        var environment = ProcessInfo.processInfo.environment
+        let racine = binary.deletingLastPathComponent().deletingLastPathComponent()
+        for (variable, sous) in [("SHERPA_LIBRARY_PATH", "lib/SHERPA-MC"),
+                                 ("SHERPA_SHARE_PATH", "share/SHERPA-MC"),
+                                 ("SHERPA_INCLUDE_PATH", "include/SHERPA-MC")] {
+            let chemin = racine.appendingPathComponent(sous)
+            if FileManager.default.fileExists(atPath: chemin.path) { environment[variable] = chemin.path }
+        }
+        return environment
+    }
+
     /// Replaces a string in every text file of a folder, in place.
+    /// Remplace le jeton du module par un chemin, dans tout un arbre. CalcHEP en a besoin : il compile chez
+    /// l'utilisateur et ses fichiers de drapeaux portent le jeton, pas un chemin.
+    static func replacePlaceholder(in folder: URL, with value: String) throws {
+        try substitute(Installation.modulePlaceholder, with: value, in: folder)
+    }
+
     private static func substitute(_ token: String, with value: String, in folder: URL) throws {
         let files = FileManager.default.enumerator(at: folder, includingPropertiesForKeys: [.isRegularFileKey])
         while let url = files?.nextObject() as? URL {

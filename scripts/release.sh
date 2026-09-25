@@ -1,5 +1,5 @@
 #!/bin/bash
-# Builds, signs, notarises and packages TreeLevel MC Engine for distribution outside the App Store.
+# Builds, signs, notarises and packages TreeLevel Tools for distribution outside the App Store.
 # Everything happens on this machine: the Developer ID key never leaves the keychain.
 #
 #   scripts/release.sh                 build, sign, notarise, staple, make the disk image
@@ -52,7 +52,7 @@ else
   VERSION=$(grep -m1 'MARKETING_VERSION' App/project.yml | sed 's/.*"\(.*\)".*/\1/')
 fi
 BUILD=$(git rev-list --count HEAD 2>/dev/null || echo 1)
-say "TreeLevel MC Engine $VERSION (build $BUILD)"
+say "TreeLevel Tools $VERSION (build $BUILD)"
 
 OUT="build/release"
 rm -rf "$OUT"
@@ -65,9 +65,9 @@ say "Application"
 (cd App && xcodegen generate >/dev/null)
 xcodebuild -project App/TreeLevelMCEngine.xcodeproj -scheme TreeLevelMCEngine -configuration Release \
   -derivedDataPath App/build CURRENT_PROJECT_VERSION="$BUILD" CODE_SIGNING_ALLOWED=NO | grep -E "error:|warning: unable|BUILD" || true
-APP_SRC="App/build/Build/Products/Release/TreeLevel MC Engine.app"
+APP_SRC="App/build/Build/Products/Release/TreeLevel Tools.app"
 [ -d "$APP_SRC" ] || { echo "the application was not built" >&2; exit 1; }
-APP="$OUT/TreeLevel MC Engine.app"
+APP="$OUT/TreeLevel Tools.app"
 cp -R "$APP_SRC" "$APP"
 cp .build/release/treelevel-mc "$APP/Contents/MacOS/treelevel-mc"
 
@@ -81,6 +81,10 @@ if [ -d "$MODULES_SRC" ]; then
   mkdir -p "$APP/Contents/Resources/Modules"
   for module in "$MODULES_SRC"/*/; do
     name=$(basename "$module")
+    # WHIZARD ne tourne pas en natif sur macOS — il compile chaque processus avec gfortran, que le système
+    # ne fournit pas — et l'application ne le propose donc que par le conteneur, qui l'emporte déjà.
+    # L'embarquer coûterait 190 Mo au téléchargement pour un générateur qui ne démarrerait jamais.
+    if [ "$name" = "whizard3" ]; then echo "  $name — écarté (conteneur seulement)"; continue; fi
     rsync -a "$module" "$APP/Contents/Resources/Modules/$name/"
     echo "  $name ($(du -sh "$module" | cut -f1))"
   done
@@ -92,7 +96,7 @@ fi
 # Nested binaries first, then the bundle; hardened runtime and a secure timestamp, both required for notarisation.
 say "Signature"
 find "$APP/Contents/MacOS" -type f -perm +111 -print0 | while IFS= read -r -d '' binary; do
-  [ "$binary" = "$APP/Contents/MacOS/TreeLevel MC Engine" ] && continue
+  [ "$binary" = "$APP/Contents/MacOS/TreeLevel Tools" ] && continue
   codesign --force --timestamp --options runtime --sign "$IDENTITY" "$binary"
 done
 # Les modules sont déjà signés — CalcHEP avec sa dérogation de validation de bibliothèques, que
@@ -101,7 +105,7 @@ codesign --force --timestamp --options runtime --sign "$IDENTITY" "$APP"
 codesign --verify --strict --verbose=1 "$APP"
 
 # --- Notarise the application ------------------------------------------------
-ZIP="$OUT/TreeLevelMCEngine-$VERSION.zip"
+ZIP="$OUT/TreeLevelTools-$VERSION.zip"
 /usr/bin/ditto -c -k --keepParent "$APP" "$ZIP"
 if [ "$NOTARIZE" = 1 ]; then
   say "Notarisation de l'application"
@@ -113,13 +117,13 @@ fi
 
 # --- Disk image --------------------------------------------------------------
 say "Image disque"
-DMG="$OUT/TreeLevelMCEngine-$VERSION.dmg"
+DMG="$OUT/TreeLevelTools-$VERSION.dmg"
 STAGE=$(mktemp -d)
 cp -R "$APP" "$STAGE/"
 cp README.md "$STAGE/Lisez-moi.md"
 cp LICENSE "$STAGE/LICENSE"
 ln -s /Applications "$STAGE/Applications"
-hdiutil create -volname "TreeLevel MC Engine $VERSION" -srcfolder "$STAGE" -ov -format UDZO "$DMG" >/dev/null
+hdiutil create -volname "TreeLevel Tools $VERSION" -srcfolder "$STAGE" -ov -format UDZO "$DMG" >/dev/null
 rm -rf "$STAGE"
 codesign --force --timestamp --sign "$IDENTITY" "$DMG"
 if [ "$NOTARIZE" = 1 ]; then
@@ -132,15 +136,25 @@ fi
 # --- Checksums and notes ------------------------------------------------------
 (cd "$OUT" && shasum -a 256 *.dmg *.zip > SHA256SUMS.txt)
 cat > "$OUT/release-notes.md" <<NOTES
-# TreeLevel MC Engine $VERSION
+# TreeLevel Tools $VERSION
 
-Générateurs Monte-Carlo externes pour TreeLevel, sur votre machine — rien ne sort d'ici.
+Les outils sous licence GPL que TreeLevel ne peut pas contenir, sur votre machine — rien ne sort d'ici.
+TreeLevel est sandboxé et ne lance aucun programme ; ce paquet est ce qui a le droit de les exécuter.
 
-- Glisser \`TreeLevel MC Engine.app\` dans \`/Applications\`, la lancer une fois.
-- Installer au moins un générateur (voir le README) :
+- Glisser \`TreeLevel Tools.app\` dans \`/Applications\`, la lancer une fois.
+- Quatre générateurs sont **déjà dedans**, rien d'autre à installer :
   - **Pythia 8** et **Herwig 7** habillent les événements de TreeLevel : gerbe, hadronisation, désintégrations.
-  - **Sherpa 3**, **WHIZARD 3** et **CalcHEP 3** calculent eux-mêmes le processus décrit par le diagramme.
-- TreeLevel propose alors, dans l'espace Génération, ceux qu'il a trouvés.
+  - **Sherpa 3** et **CalcHEP 3** calculent eux-mêmes le processus décrit par le diagramme.
+- TreeLevel les propose alors dans l'espace Génération.
+
+**WHIZARD 3** n'y est pas : il compile chaque processus avec gfortran, que ni macOS ni Xcode ne fournissent.
+Deux façons de l'avoir, toutes deux à cocher dans la fenêtre de TreeLevel Tools :
+
+- l'**image Docker** \`ghcr.io/gpasa/treelevel-tools\`, qui porte les cinq outils dans un environnement cohérent ;
+- votre **propre installation** (MacPorts, Homebrew), si vous en avez une.
+
+Aucune des deux ne sert d'office : par défaut, seuls les générateurs livrés ici sont proposés, pour qu'un
+même document donne le même résultat sur deux machines.
 
 Signé et notarisé par Apple. Sommes de contrôle dans \`SHA256SUMS.txt\`.
 NOTES
@@ -152,7 +166,7 @@ ls -lh "$OUT" | sed 's/^/  /'
 if [ "$UPLOAD" = 1 ]; then
   say "Publication"
   command -v gh >/dev/null || { echo "gh n'est pas installé" >&2; exit 1; }
-  gh release create "v$VERSION" --title "TreeLevel MC Engine $VERSION" \
+  gh release create "v$VERSION" --title "TreeLevel Tools $VERSION" \
      --notes-file "$OUT/release-notes.md" "$OUT"/*.dmg "$OUT"/*.zip "$OUT/SHA256SUMS.txt" \
      && echo "  release v$VERSION créée"
 fi

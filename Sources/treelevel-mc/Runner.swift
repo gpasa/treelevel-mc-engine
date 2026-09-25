@@ -22,8 +22,9 @@ struct Runner {
         status.started = start
         status.message = "préparation"
         publish(status)
-        // A generator that computes its own matrix elements is given a process, not events.
-        if job.generator.readsLesHouches,
+        // A generator that computes its own matrix elements is given a process, not events — and so is one
+        // put in front of a machine in collider mode, which makes the hard process itself.
+        if job.generator.readsLesHouches, job.hardProcess?.colliderMode != .collider,
            !FileManager.default.fileExists(atPath: folder.inputURL(job).path) {
             return finish(failed: "the job has no input file (\(job.input))", start: start)
         }
@@ -67,12 +68,31 @@ struct Runner {
         guard let driver = Installation.pythiaDriver else {
             return finish(failed: "the Pythia 8 module is not installed", start: start)
         }
+        // Two ways in. Usually Pythia dresses the events TreeLevel computed, and reads them from the Les
+        // Houches file. In collider mode it makes the hard process itself, from beams and open channels,
+        // and the Les Houches file has no part in it — there is nothing to dress that we chose.
         // The generators run with the job folder as their working directory and are given relative names:
         // Pythia reads `Beams:LHEF` as a single word, so a path with spaces (and the job folder lives under
         // "Application Support") would be cut short.
+        let beams: String
+        if let p = job.hardProcess, p.colliderMode == .collider {
+            // Pythia refuse ces cas en imprimant une table de processus vide, sans un mot d'explication,
+            // et le journal ne montre alors qu'une bannière. On les nomme donc avant de le lancer.
+            if let raison = Self.colliderObjection(p, driver: driver) {
+                return finish(failed: raison, start: start)
+            }
+            guard let block = Self.pythiaCollider(p) else {
+                return finish(failed: "collider mode needs two beams and their energies", start: start)
+            }
+            beams = block
+        } else {
+            beams = """
+            Beams:frameType = 4
+            Beams:LHEF = \(job.input)
+            """
+        }
         var settings = """
-        Beams:frameType = 4
-        Beams:LHEF = \(job.input)
+        \(beams)
         Main:numberOfEvents = \(job.events)
         Random:setSeed = on
         Random:seed = \(job.seed % 900_000_000)
@@ -91,6 +111,88 @@ struct Runner {
         return try runProcess(driver, ["--config", config.lastPathComponent, "--out", job.output], start: start,
                               name: "Pythia 8 " + (Installation.capabilities(engineVersion: engineVersion).versions["pythia8"] ?? ""),
                               environment: ModuleSetup.pythiaEnvironment(driver: driver))
+    }
+
+    /// Why this machine cannot work, in one sentence, or nil when nothing is obviously wrong.
+    ///
+    /// Two causes cover nearly every refusal, and Pythia names neither: it prints its banner, then an empty
+    /// process table, then stops. Saying it ourselves turns a dead end into an instruction.
+    static func colliderObjection(_ p: MCProcess, driver: URL) -> String? {
+        guard p.beams.count == 2 else { return nil }
+        let hadronic = p.beams.map { abs($0) >= 100 }
+        // Les grilles de densités partoniques ne servent qu'aux faisceaux composites — c'est pourquoi leur
+        // absence reste invisible tant qu'on ne fait que des leptons.
+        if hadronic.contains(true) {
+            let data = driver.deletingLastPathComponent()
+                .appendingPathComponent("share/Pythia8/pdfdata", isDirectory: true)
+            if !FileManager.default.fileExists(atPath: data.path) {
+                return "a hadron beam needs Pythia's parton-density grids (share/Pythia8/pdfdata), "
+                     + "which this module does not carry — reinstall the Pythia 8 module"
+            }
+        }
+        // Les voies d'annihilation demandent une particule et son antiparticule, ou deux hadrons dont les
+        // partons s'en chargent. La voie t n'exige rien de tel : elle n'objecte donc jamais, et une machine
+        // électron-proton reste parfaitement légitime — c'est de la diffusion, pas de l'annihilation.
+        let annihilent = (hadronic[0] && hadronic[1]) || p.beams[0] == -p.beams[1]
+        let ouvertes = p.channels.filter { canal in
+            switch canal {
+            case .singleBoson, .bosonPair: return annihilent
+            case .bosonExchange: return true
+            }
+        }
+        if ouvertes.isEmpty && !p.channels.isEmpty {
+            return "beams \(p.beams[0]) and \(p.beams[1]) cannot annihilate, so the channels asked for "
+                 + "(ff̄ → γ*/Z, ff̄ → VV) have nothing to work with — these two scatter rather than "
+                 + "annihilate, which is the boson-exchange family"
+        }
+        return nil
+    }
+
+    /// The Pythia settings that put it in front of a machine rather than in front of our events: the two
+    /// beams, their energy, and the families of hard channels left open. What comes out is everything those
+    /// channels make — the diagram's final state among the rest — and the selection happens afterwards, in
+    /// TreeLevel, on the events as they are reconstructed. That is the whole point: a real ring cannot be
+    /// asked for one final state, so the cross section we end up quoting is measured, not requested.
+    static func pythiaCollider(_ p: MCProcess) -> String? {
+        guard p.beams.count == 2, p.beamEnergies.count == 2 else { return nil }
+        var lines = ["Beams:idA = \(p.beams[0])", "Beams:idB = \(p.beams[1])"]
+        if p.fixedTarget {
+            // Le repos de la cible se dit par ses trois composantes nulles, et non par une énergie égale à
+            // sa masse : à donner un nombre voisin de la masse on lui laisse une petite impulsion, et
+            // l'énergie de collision n'est plus tout à fait celle qu'on croit. `beamEnergies[0]` est alors
+            // l'impulsion du faisceau, et Pythia tire l'énergie de la cible de sa propre table de masses.
+            lines += ["Beams:frameType = 3",
+                      "Beams:pxA = 0", "Beams:pyA = 0", "Beams:pzA = \(p.beamEnergies[0])",
+                      "Beams:pxB = 0", "Beams:pyB = 0", "Beams:pzB = 0"]
+        } else if abs(p.beamEnergies[0] - p.beamEnergies[1]) < 1e-9 {
+            // Equal energies are said once, as the energy in the centre of mass; unequal ones oblige Pythia
+            // to boost, and it wants them one by one.
+            lines += ["Beams:frameType = 1", "Beams:eCM = \(p.centreOfMassEnergy)"]
+        } else {
+            lines += ["Beams:frameType = 2",
+                      "Beams:eA = \(p.beamEnergies[0])", "Beams:eB = \(p.beamEnergies[1])"]
+        }
+        // A charged current needs a beam that can change flavour. Two leptons of opposite charge cannot,
+        // so switching ffbar2W on there would only print a warning and produce nothing.
+        let leptonic = p.beams.allSatisfy { (11...16).contains(abs($0)) }
+        for channel in p.channels {
+            switch channel {
+            case .singleBoson:
+                lines.append("WeakSingleBoson:ffbar2gmZ = on")
+                if !leptonic { lines.append("WeakSingleBoson:ffbar2W = on") }
+            case .bosonPair:
+                lines += ["WeakDoubleBoson:ffbar2gmZgmZ = on", "WeakDoubleBoson:ffbar2ZW = on",
+                          "WeakDoubleBoson:ffbar2WW = on"]
+            case .bosonExchange:
+                // La voie t : les deux faisceaux se diffusent en échangeant un boson. Rien ne s'annihile,
+                // et c'est ce qui rend un anneau électron-proton possible. Le photon échangé diverge quand
+                // Q² tend vers zéro ; Pythia pose son propre plancher (`pTHatMinDiverge`) faute de mieux,
+                // et une coupure explicite le remplace dès qu'on en donne une.
+                lines += ["WeakBosonExchange:ff2ff(t:gmZ) = on", "WeakBosonExchange:ff2ff(t:W) = on"]
+            }
+        }
+        if let pt = p.minimumPT, pt > 0 { lines.append("PhaseSpace:pTHatMin = \(pt)") }
+        return lines.joined(separator: "\n")
     }
 
     /// Herwig 7: written as a `.in` file, then `Herwig read` and `Herwig run`.
@@ -174,6 +276,13 @@ struct Runner {
         HARD_DECAYS: {Enabled: \(job.decays)}
         EVENT_OUTPUT: HepMC3[\(job.output)]
         """
+        // Sherpa donne d'office une structure aux faisceaux de leptons — la densité « PDFE », c'est-à-dire
+        // le rayonnement initial de QED. La section efficace qu'il annonce n'est alors plus celle du
+        // processus à √s : elle est dominée par le retour radiatif vers le Z, et sort six fois trop haut
+        // (21 pb au lieu de 3,2 pour e⁻e⁺ → b b̄ à 200 GeV). Les autres générateurs calculent à énergie
+        // fixe ; on aligne Sherpa, et qui veut le rayonnement le redemande dans les réglages libres.
+        // Les faisceaux hadroniques, eux, ne sont rien sans leurs densités.
+        if !p.beams.allSatisfy({ abs($0) > 100 }) { card += "\nPDF_LIBRARY: None" }
         if let pt = p.minimumPT {
             card += "\nSELECTORS:\n- [PT, \(p.finalState[0]), \(pt), E_CMS]"
         }
@@ -181,14 +290,29 @@ struct Runner {
         try (card + "\n").write(to: folder.url.appendingPathComponent("Sherpa.yaml"), atomically: true, encoding: .utf8)
 
         let version = Installation.capabilities(engineVersion: engineVersion).versions["sherpa3"] ?? "Sherpa 3"
-        return try runProcess(sherpa, ["-f", "Sherpa.yaml"], start: start, name: version)
+        return try runProcess(sherpa, ["-f", "Sherpa.yaml"], start: start, name: version,
+                              environment: ModuleSetup.sherpaEnvironment(binary: sherpa))
     }
 
     /// WHIZARD 3: a Sindarin script. O'Mega writes the matrix element in Fortran and compiles it on the
     /// spot, so the first run of a new process pays a few seconds of compiler before generating anything.
     private func whizard(start: Date) throws -> Bool {
         if let result = containerIfNotNative(start) { return result }
-        guard let whizard = Installation.whizard else {
+        // Sans conteneur il n'y a pas de voie : le dire ici, plutôt que de laisser le binaire natif
+        // échouer plus loin sur un modèle introuvable ou un compilateur Fortran absent.
+        // Celui de l'utilisateur, s'il l'a permis : lui sait où il est et a son compilateur.
+        if Installation.systemWhizard != nil { return try whizardNative(start: start) }
+        return finish(failed: Self.whizardNeedsContainer, start: start)
+    }
+
+    static let whizardNeedsContainer =
+        "WHIZARD 3 only runs through the container on macOS: it compiles each process with gfortran, "
+        + "which neither macOS nor Xcode provides. Turn the container on in the engine's window "
+        + "(Docker required), or choose another generator."
+
+    /// Le corps natif, conservé pour le jour où WHIZARD sera relogeable et son compilateur disponible.
+    private func whizardNative(start: Date) throws -> Bool {
+        guard let whizard = Installation.systemWhizard ?? Installation.whizard else {
             return finish(failed: "the WHIZARD 3 module is not installed", start: start)
         }
         guard let p = job.hardProcess, p.beams.count == 2, !p.finalState.isEmpty else {
@@ -219,14 +343,44 @@ struct Runner {
         $hadronization_method = "PYTHIA6"
         n_events = \(job.events)
         $sample = "\(sample)"
-        sample_format = hepmc
+        sample_format = lhef
         \(job.extraSettings ?? "")
         simulate (job)
         """
         try (script + "\n").write(to: folder.url.appendingPathComponent("job.sin"), atomically: true, encoding: .utf8)
 
         let version = Installation.capabilities(engineVersion: engineVersion).versions["whizard3"] ?? "WHIZARD 3"
-        return try runProcess(whizard, ["job.sin"], start: start, name: version, crossSection: Self.whizardCrossSection)
+        guard try runProcess(whizard, ["job.sin"], start: start, name: version,
+                             finishNow: false, crossSection: Self.whizardCrossSection) else { return false }
+
+        // WHIZARD écrit du Les Houches, et nous le convertissons — comme pour CalcHEP. Il sait aussi écrire
+        // le HepMC3 lui-même, et c'est ce qu'il faisait : il s'arrêtait alors en fermant le fichier, sur
+        // « pointer being freed was not allocated ». Sa colle C++ et la bibliothèque HepMC3 livrée avec lui
+        // ne venaient pas de la même bibliothèque standard, l'une allouait et l'autre libérait. Passer par
+        // le Les Houches supprime la question : le format est du Fortran de bout en bout, et le module n'a
+        // plus besoin d'emporter HepMC3 du tout.
+        let lhe = folder.url.appendingPathComponent(sample + ".lhe")
+        guard FileManager.default.fileExists(atPath: lhe.path) else {
+            return finish(failed: "\(version) wrote no event file — see engine.log", start: start)
+        }
+        let events = try LesHouchesLite.read(lhe)
+        // La section efficace du journal porte son erreur d'intégration ; celle du fichier n'en a pas.
+        let fromLog = Self.whizardCrossSection(in: (try? String(contentsOf: folder.logURL, encoding: .utf8)) ?? "")
+        try LesHouchesLite.writeHepMC(events, to: folder.outputURL(job),
+                                      crossSection: fromLog?.0 ?? events.crossSection)
+
+        var done = MCStatus(state: .finished, jobID: job.id)
+        done.number = number
+        done.started = start
+        done.finished = Date()
+        done.eventsWritten = events.events.count
+        done.crossSection = fromLog?.0 ?? events.crossSection
+        done.crossSectionError = fromLog?.1
+        done.generatorVersion = version
+        done.progress = 1
+        done.seconds = Date().timeIntervalSince(start)
+        publish(done)
+        return true
     }
 
     /// WHIZARD writes no cross section into its HepMC3, so it is read from the last line of its integration
@@ -264,9 +418,25 @@ struct Runner {
         let incoming = names[0..<2].map { $0! }.joined(separator: ",")
         let outgoing = names[2...].map { $0! }.joined(separator: ",")
 
-        let work = folder.url.appendingPathComponent("calchep", isDirectory: true)
+        // CalcHEP compile chaque processus à l'exécution, et ni `make` ni ses scripts ne savent traiter un
+        // chemin qui contient une espace : `include $(CALCHEP)/FlagsForMake` devient deux fichiers, et
+        // `make` n'offre aucune syntaxe pour le protéger. Or le dossier d'un travail vit dans le conteneur
+        // de TreeLevel — « …/Application Support/MCJobs/… » —, qui en porte deux. On travaille donc dans le
+        // temporaire du système, qui n'en a pas, et on rapatrie ensuite ce qui compte.
+        let work = Self.spaceFreeWorkDirectory(for: job.id)
         try? FileManager.default.removeItem(at: work)
-        guard try runProcess(root.appendingPathComponent("mkWORKdir"), [work.path], start: start,
+        try FileManager.default.createDirectory(at: work.deletingLastPathComponent(),
+                                                withIntermediateDirectories: true)
+        // Le module aussi doit être atteignable sans espace : les Makefiles qu'engendre CalcHEP écrivent
+        // `include $(CALCHEP)/FlagsForMake`. Et il porte le jeton que l'empaquetage a posé à la place du
+        // préfixe de construction ; le remplacer par le vrai chemin y remettrait les espaces. On recopie
+        // donc le module à côté du travail — dix-huit mégaoctets, une seconde — et on substitue le jeton
+        // par cette copie-là, qui n'en a pas.
+        let racine = work.deletingLastPathComponent().appendingPathComponent("module", isDirectory: true)
+        try? FileManager.default.removeItem(at: racine)
+        try FileManager.default.copyItem(at: root, to: racine)
+        try ModuleSetup.replacePlaceholder(in: racine, with: racine.path)
+        guard try runProcess(racine.appendingPathComponent("mkWORKdir"), [work.path], start: start,
                              name: "CalcHEP", step: "préparation du dossier de travail", finishNow: false) else { return false }
 
         let batch = """
@@ -292,8 +462,11 @@ struct Runner {
 
         let version = Installation.calchepVersion(root) ?? "CalcHEP 3"
         guard try runProcess(work.appendingPathComponent("calchep_batch"), ["batch_file"], start: start,
-                             name: version, workingDirectory: work, finishNow: false) else { return false }
+                             name: version, workingDirectory: work, finishNow: false) else { bringBack(work); return false }
 
+        // Le dossier de travail est dans le temporaire : on ramène le compte rendu tant qu'il existe, sinon
+        // une panne ne laisserait rien à lire.
+        bringBack(work)
         // CalcHEP gzips its Les Houches file; unpack it, then convert as the passthrough backend does.
         let packed = work.appendingPathComponent("batch_results/events-single.lhe.gz")
         guard FileManager.default.fileExists(atPath: packed.path) else {
@@ -423,7 +596,9 @@ struct Runner {
     /// module ne soit installé, soit que celui qui l'est ne réponde pas. Le critère est exactement celui de
     /// `nativeCapabilities` : ce que TreeLevel voit dans la liste est ce qui tournera.
     private func containerIfNotNative(_ start: Date) -> Bool? {
-        guard !Installation.nativeCapabilities(engineVersion: engineVersion).generators.contains(job.generator),
+        // Le conteneur ne se substitue à rien : il ne sert que si l'utilisateur l'a demandé.
+        guard Installation.allowsContainer,
+              !Installation.nativeCapabilities(engineVersion: engineVersion).generators.contains(job.generator),
               let container = Installation.container(engineVersion: engineVersion) else { return nil }
         return inContainer(container, start: start)
     }
@@ -459,8 +634,18 @@ struct Runner {
         let output = String(decoding: pipe.fileHandleForReading.readDataToEndOfFile(), as: UTF8.self)
         process.waitUntilExit()
 
-        let status = folder.readStatus()
-        if process.terminationStatus == 0, status?.state == .finished { return true }
+        var status = folder.readStatus()
+        if process.terminationStatus == 0, status?.state == .finished {
+            // Le moteur de l'image a écrit le statut ; il ignore qu'il tournait dans une image. On le dit
+            // ici, pour qu'un travail retrouvé six mois plus tard dise par où il est passé — et pour que
+            // personne n'ait à deviner en comparant des sections efficaces.
+            if var fini = status, !(fini.generatorVersion ?? "").contains("conteneur") {
+                fini.generatorVersion = (fini.generatorVersion ?? job.generator.label) + " (conteneur)"
+                publish(fini)
+                status = fini
+            }
+            return true
+        }
         if status?.state == .failed, let message = status?.message, !message.isEmpty {
             return finish(failed: message, start: start)
         }
@@ -468,6 +653,30 @@ struct Runner {
                            .first(where: { !$0.isEmpty })
         return finish(failed: "the container stopped with code \(process.terminationStatus)"
                               + (reason.map { " — " + $0 } ?? ""), start: start)
+    }
+
+    /// Un dossier de travail sans espace, pour les générateurs dont les outils de compilation n'en
+    /// supportent pas. Le temporaire du système convient : `/var/folders/…`, jamais d'espace, et le
+    /// système le nettoie de lui-même si nous n'y parvenons pas.
+    private static func spaceFreeWorkDirectory(for id: String) -> URL {
+        let sain = id.map { $0.isLetter || $0.isNumber || $0 == "-" ? $0 : "-" }
+        return URL(fileURLWithPath: NSTemporaryDirectory(), isDirectory: true)
+            .appendingPathComponent("treelevel-calchep", isDirectory: true)
+            .appendingPathComponent(String(sain), isDirectory: true)
+    }
+
+    /// Rapatrie ce qu'on voudra lire après coup : le compte rendu de CalcHEP et ses journaux de
+    /// compilation. Les événements, eux, passent par `events.lhe` comme avant.
+    private func bringBack(_ work: URL) {
+        let fm = FileManager.default
+        let cible = folder.url.appendingPathComponent("calchep", isDirectory: true)
+        try? fm.removeItem(at: cible)
+        try? fm.createDirectory(at: cible, withIntermediateDirectories: true)
+        for nom in ["batch_file", "html", "Processes"] {
+            let source = work.appendingPathComponent(nom)
+            guard fm.fileExists(atPath: source.path) else { continue }
+            try? fm.copyItem(at: source, to: cible.appendingPathComponent(nom))
+        }
     }
 
     private func finish(failed message: String, start: Date) -> Bool {

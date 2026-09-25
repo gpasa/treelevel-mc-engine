@@ -14,22 +14,22 @@ targets:
         excludes: ["main.swift"]
     settings:
       base:
-        PRODUCT_NAME: TreeLevel MC Engine
-        PRODUCT_BUNDLE_IDENTIFIER: org.pasahome.TreeLevelMCEngine
+        PRODUCT_NAME: TreeLevel Tools
+        PRODUCT_BUNDLE_IDENTIFIER: org.pasahome.TreeLevelTools
         SWIFT_VERSION: "5.10"
         MACOSX_DEPLOYMENT_TARGET: "13.0"
         CODE_SIGN_STYLE: Automatic
         ENABLE_HARDENED_RUNTIME: YES
         ENABLE_APP_SANDBOX: NO
-        MARKETING_VERSION: "0.2.0"
+        MARKETING_VERSION: "0.3.0"
         CURRENT_PROJECT_VERSION: "2"
         GENERATE_INFOPLIST_FILE: NO
         INFOPLIST_FILE: Info.plist
     info:
       path: Info.plist
       properties:
-        CFBundleName: TreeLevel MC Engine
-        CFBundleDisplayName: TreeLevel MC Engine
+        CFBundleName: TreeLevel Tools
+        CFBundleDisplayName: TreeLevel Tools
         CFBundleShortVersionString: $(MARKETING_VERSION)
         CFBundleVersion: $(CURRENT_PROJECT_VERSION)
         LSMinimumSystemVersion: "13.0"
