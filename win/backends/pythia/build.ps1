@@ -30,8 +30,12 @@ if (-not $Pythia) {
         (Join-Path (Split-Path (Split-Path $root -Parent) -Parent) 'pythia8'),
         (Join-Path $env:LOCALAPPDATA 'TreeLevel Tools\src\pythia8')
     )
-    $guesses += Get-ChildItem -Path (Split-Path $root -Parent) -Directory -Filter 'pythia8*' -ErrorAction SilentlyContinue |
-                ForEach-Object { $_.FullName }
+    # An unpacked release carries its number — pythia8318, not pythia8 — so every folder that begins with the
+    # name is a candidate, beside this one and in the support folder where release.ps1 expects to find it.
+    foreach ($parent in @((Split-Path $root -Parent), (Join-Path $env:LOCALAPPDATA 'TreeLevel Tools\src'))) {
+        $guesses += Get-ChildItem -Path $parent -Directory -Filter 'pythia8*' -ErrorAction SilentlyContinue |
+                    ForEach-Object { $_.FullName }
+    }
     $Pythia = $guesses | Where-Object { Test-Path (Join-Path $_ 'include\Pythia8\Pythia.h') } | Select-Object -First 1
 }
 if (-not $Pythia -or -not (Test-Path (Join-Path $Pythia 'include\Pythia8\Pythia.h'))) {

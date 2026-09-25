@@ -50,10 +50,13 @@ Copy-Item (Join-Path $out "publish-$Arch\treelevel-tools.exe") $staging
 
 # --- the Pythia module --------------------------------------------------------------------------------------
 if (-not $EngineOnly) {
-    if (-not $Pythia) { Fail 'give the Pythia sources with -Pythia, or pass -EngineOnly' }
+    # build.ps1 knows where the sources usually sit and says so clearly when it cannot find them; asking for
+    # the path twice only meant that a rename of that folder stopped this script with a different message.
     Say "Module Pythia 8"
     $modules = Join-Path $staging 'Modules\pythia8'
-    & (Join-Path $root 'backends\pythia\build.ps1') -Pythia $Pythia -Arch $Arch -Prefix $modules
+    $arguments = @{ Arch = $Arch; Prefix = $modules }
+    if ($Pythia) { $arguments.Pythia = $Pythia }
+    & (Join-Path $root 'backends\pythia\build.ps1') @arguments
     if ($LASTEXITCODE -ne 0) { Fail 'the Pythia module did not build' }
     if ($NoPdfData) {
         # 53 MB of parton densities that an e+e- collision never opens; a hadron beam does.
