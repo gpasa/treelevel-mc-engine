@@ -99,4 +99,4 @@ if ($NoInstall) { exit 0 }
 & $cmake --install $build --config Release --prefix $Prefix
 if ($LASTEXITCODE -ne 0) { Fail 'installation failed' }
 Write-Host "installed $Prefix" -ForegroundColor Green
-Write-Host 'Check with:  treelevel-mc capabilities'
+Write-Host 'Check with:  treelevel-tools capabilities'

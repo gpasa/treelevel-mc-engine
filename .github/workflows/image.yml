@@ -113,7 +113,7 @@ jobs:
           if [ -z "$tag" ] || [ "$tag" = "$GITHUB_REF_NAME" ]; then
             # Not a tag push: the number the two engines are pinned to, which is in the file they share. Taking
             # it from either engine's own version would publish under a tag neither of them asks for.
-            tag=$(grep -oE 'ToolsVersion = "[^"]+' win/treelevel-mc/MCEngineProtocol.cs | head -1 | cut -d'"' -f2)
+            tag=$(grep -oE 'ToolsVersion = "[^"]+' win/treelevel-tools/MCEngineProtocol.cs | head -1 | cut -d'"' -f2)
           fi
           echo "tag=${tag:-latest}" >> "$GITHUB_OUTPUT"
         shell: bash

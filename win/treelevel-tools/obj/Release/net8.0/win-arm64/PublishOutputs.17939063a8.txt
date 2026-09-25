@@ -1,0 +1,2 @@
+Y:\Documents\Projects\prog\ClaudeCode\TreeLevelMCEngine\win\treelevel-mc\bin\Release\net8.0\win-arm64\publish\treelevel-mc.pdb
+Y:\Documents\Projects\prog\ClaudeCode\TreeLevelMCEngine\win\treelevel-mc\bin\Release\net8.0\win-arm64\publish\treelevel-mc.exe

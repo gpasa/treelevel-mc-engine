@@ -33,8 +33,8 @@ if (-not $Arch) {
 }
 $rid = "win-$Arch"
 
-$version = (Select-String -Path (Join-Path $root 'treelevel-mc\treelevel-mc.csproj') -Pattern '<Version>([^<]+)').Matches[0].Groups[1].Value
-if (-not $version) { Fail 'no <Version> in treelevel-mc.csproj' }
+$version = (Select-String -Path (Join-Path $root 'treelevel-tools\treelevel-tools.csproj') -Pattern '<Version>([^<]+)').Matches[0].Groups[1].Value
+if (-not $version) { Fail 'no <Version> in treelevel-tools.csproj' }
 
 $out = Join-Path $PSScriptRoot 'out'
 $staging = Join-Path $out "TreeLevel Tools"
@@ -43,10 +43,10 @@ New-Item -ItemType Directory -Force -Path $staging | Out-Null
 
 # --- the engine ---------------------------------------------------------------------------------------------
 Say "Moteur $version ($rid)"
-& dotnet publish (Join-Path $root 'treelevel-mc') -c Release -r $rid --self-contained true `
+& dotnet publish (Join-Path $root 'treelevel-tools') -c Release -r $rid --self-contained true `
     -p:PublishSingleFile=true -p:DebugType=none -o (Join-Path $out "publish-$Arch") | Out-Null
 if ($LASTEXITCODE -ne 0) { Fail 'the engine did not build' }
-Copy-Item (Join-Path $out "publish-$Arch\treelevel-mc.exe") $staging
+Copy-Item (Join-Path $out "publish-$Arch\treelevel-tools.exe") $staging
 
 # --- the Pythia module --------------------------------------------------------------------------------------
 if (-not $EngineOnly) {
@@ -78,24 +78,24 @@ enregistrer, aucun service, aucun compte. Pour désinstaller, supprimez le dossi
 
 Ce qu'il contient
 -----------------
-    treelevel-mc.exe          le moteur
+    treelevel-tools.exe          le moteur
     Modules\pythia8\          Pythia 8 et ses données
 
 Pour vérifier depuis une console :
 
-    "%LOCALAPPDATA%\Programs\TreeLevel Tools\treelevel-mc.exe" capabilities
+    "%LOCALAPPDATA%\Programs\TreeLevel Tools\treelevel-tools.exe" capabilities
 
 Herwig 7 et Sherpa 3
 --------------------
 Ils n'existent pas pour Windows et arrivent dans une image de conteneur :
 
-    docker pull ghcr.io/gpasa/treelevel-mc-engine:$version
+    docker pull ghcr.io/gpasa/treelevel-tools-engine:$version
 
 Licence
 -------
 GPL v3 ou ultérieure. Pythia 8 est sous GPL v2 ou ultérieure ; sa licence est dans
 Modules\pythia8\COPYING.pythia8 et ses sources sont celles de https://pythia.org,
-construites par win/backends/pythia du dépôt https://github.com/gpasa/treelevel-mc-engine.
+construites par win/backends/pythia du dépôt https://github.com/gpasa/treelevel-tools-engine.
 "@ | Set-Content (Join-Path $staging 'LISEZMOI.txt') -Encoding utf8
 
 # --- the archive --------------------------------------------------------------------------------------------

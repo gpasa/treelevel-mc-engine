@@ -31,10 +31,10 @@ imbriquée : sur un Mac, cela veut dire une puce M3 ou M4 avec Parallels 19+.
 | | |
 |---|---|
 | Base | Debian 12 (bookworm) |
-| `/opt/treelevel-mc` | Herwig 7 et sa pile (ThePEG, FastJet, LHAPDF, HepMC3) par le bootstrap officiel en `--lite`, puis Sherpa 3, Pythia 8 et WHIZARD 3 dans le même préfixe |
-| `/opt/treelevel-mc/calchep` | CalcHEP 3, construit à son emplacement définitif — ses scripts portent des chemins absolus |
-| `/opt/treelevel-mc/bin/treelevel-pythia` | notre pilote Pythia, le même fichier que Windows compile avec MSVC |
-| `/usr/local/bin/treelevel-mc` | le moteur, compilé pour l'architecture de l'image |
+| `/opt/treelevel-tools` | Herwig 7 et sa pile (ThePEG, FastJet, LHAPDF, HepMC3) par le bootstrap officiel en `--lite`, puis Sherpa 3, Pythia 8 et WHIZARD 3 dans le même préfixe |
+| `/opt/treelevel-tools/calchep` | CalcHEP 3, construit à son emplacement définitif — ses scripts portent des chemins absolus |
+| `/opt/treelevel-tools/bin/treelevel-pythia` | notre pilote Pythia, le même fichier que Windows compile avec MSVC |
+| `/usr/local/bin/treelevel-tools` | le moteur, compilé pour l'architecture de l'image |
 | `/job` | le point de montage du dossier de travail |
 | Architectures | `linux/amd64` et `linux/arm64`, réunies sous un seul tag |
 
@@ -55,7 +55,7 @@ En local, pour une seule architecture :
 
 ```bash
 docker build -f docker/Dockerfile -t treelevel-tools:dev .
-TREELEVEL_MC_IMAGE=treelevel-tools:dev treelevel-mc capabilities
+TREELEVEL_MC_IMAGE=treelevel-tools:dev treelevel-tools capabilities
 ```
 
 **C'est sur macOS que l'image s'éprouve.** Docker y fait tourner des conteneurs arm64 nativement, sans
@@ -82,13 +82,13 @@ GSL (GPL-3), LHAPDF (GPL-3), FastJet (GPL-2), HepMC3 (LGPL-3).
 Distribuer ces binaires oblige à publier les sources correspondantes. Elles le sont de trois façons :
 
 1. le `Dockerfile` de ce dossier **est** la recette de construction, et il est versionné ici ;
-2. l'image porte `/opt/treelevel-mc/share/treelevel-mc/SOURCES.txt`, la liste des archives exactes que la
+2. l'image porte `/opt/treelevel-tools/share/treelevel-tools/SOURCES.txt`, la liste des archives exactes que la
    construction a téléchargées — relevée pendant le bootstrap, pas écrite à la main ;
 3. le moteur lui-même est dans ce dépôt, sous GPL v3.
 
 ```bash
 docker run --rm --entrypoint cat ghcr.io/gpasa/treelevel-tools:0.3.0 \
-  /opt/treelevel-mc/share/treelevel-mc/SOURCES.txt
+  /opt/treelevel-tools/share/treelevel-tools/SOURCES.txt
 ```
 
 ## Ce que l'image ne porte pas

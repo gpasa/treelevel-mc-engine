@@ -95,8 +95,8 @@ moteur cherche l'étiquette de sa propre version, puis `latest`.
 
 ```bash
 swift build -c release
-.build/release/treelevel-mc capabilities          # ce que cette installation sait faire
-.build/release/treelevel-mc run /chemin/du/dossier  # exécute job.json
+.build/release/treelevel-tools capabilities          # ce que cette installation sait faire
+.build/release/treelevel-tools run /chemin/du/dossier  # exécute job.json
 ```
 
 Le dossier contient `job.json` (généré par TreeLevel, format décrit dans `Protocol/MCEngineProtocol.swift`),

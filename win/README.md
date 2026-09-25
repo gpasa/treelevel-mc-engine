@@ -5,9 +5,9 @@ et réécrit les événements en HepMC3. Le protocole est identique au bit près
 relit ici et inversement.
 
 ```
-treelevel-mc run <dossier>            exécute job.json, produit events.hepmc, tient status.json à jour
-treelevel-mc capabilities [--out f]   les générateurs installés, en JSON
-treelevel-mc version
+treelevel-tools run <dossier>            exécute job.json, produit events.hepmc, tient status.json à jour
+treelevel-tools capabilities [--out f]   les générateurs installés, en JSON
+treelevel-tools version
 ```
 
 ## Ce qui tourne, et comment
@@ -29,18 +29,18 @@ recette et les sources sont publiées avec elle.
 .NET 8 suffit ; il n'y a aucune dépendance.
 
 ```powershell
-cd win\treelevel-mc
+cd win\treelevel-tools
 dotnet publish -c Release -r win-arm64   # ou win-x64
 ```
 
-Le résultat est un seul exécutable, `treelevel-mc.exe`. TreeLevel le cherche à côté de lui, dans
+Le résultat est un seul exécutable, `treelevel-tools.exe`. TreeLevel le cherche à côté de lui, dans
 `%LOCALAPPDATA%\Programs\TreeLevel Tools`, dans `%ProgramFiles%\TreeLevel Tools`, dans votre dossier
 personnel, puis dans le PATH.
 
 > TreeLevel est empaqueté en MSIX, et un paquet MSIX détourne les écritures dans `%LOCALAPPDATA%` vers son
 > propre conteneur : un programme extérieur ne verrait pas ce qu'il y écrit. Les dossiers de travail sont donc
 > créés **à côté du moteur** (`<dossier du moteur>\MCJobs\<id>`), et les capacités sont lues en lançant
-> `treelevel-mc capabilities` plutôt qu'en ouvrant le fichier publié.
+> `treelevel-tools capabilities` plutôt qu'en ouvrant le fichier publié.
 
 ## Construire le module Pythia 8
 
@@ -68,7 +68,7 @@ statiquement : le module tourne sur une machine sans redistribuable Visual C++.
 Les 107 unités de compilation de Pythia prennent quelques minutes la première fois.
 
 ```powershell
-treelevel-mc capabilities     # pythia8 doit apparaître, avec sa version
+treelevel-tools capabilities     # pythia8 doit apparaître, avec sa version
 ```
 
 ## Herwig 7 et Sherpa 3 : le conteneur
@@ -136,7 +136,7 @@ Pythia 8.318 construit avec MSVC 14.51 (Visual Studio 2026) sur Windows 11 ARM64
 e⁻e⁺ → b b̄ à 200 GeV écrits par TreeLevel :
 
 ```
-treelevel-mc run <dossier>
+treelevel-tools run <dossier>
   → 200 événements gerbés et hadronisés en 1,0 s, aucune erreur Pythia
   → σ = 3.11399 pb, celle du fichier d'entrée, reportée telle quelle dans status.json
   → feyn analyze : 31,9 photons, 24,2 pions, 3,6 kaons et 1,3 nucléon par événement en moyenne,

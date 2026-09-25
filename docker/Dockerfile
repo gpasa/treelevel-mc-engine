@@ -22,7 +22,7 @@ FROM debian:bookworm AS hep
 
 ARG SHERPA_VERSION=3.0.5
 ARG PYTHIA_VERSION=8318
-ENV PREFIX=/opt/treelevel-mc
+ENV PREFIX=/opt/treelevel-tools
 ENV DEBIAN_FRONTEND=noninteractive
 
 # Failures in the middle of a pipeline must fail the layer: without this, `… | tee` reports the success of tee
@@ -59,9 +59,9 @@ RUN chmod +x /usr/local/bin/gfortran && gfortran --version | head -1
 RUN wget -q https://herwig.hepforge.org/downloads/herwig-bootstrap \
     && chmod +x herwig-bootstrap \
     && python3 ./herwig-bootstrap --lite -j "$(nproc)" --with-boost=/usr "$PREFIX" 2>&1 | tee /tmp/bootstrap.log \
-    && mkdir -p "$PREFIX/share/treelevel-mc" \
+    && mkdir -p "$PREFIX/share/treelevel-tools" \
     && grep -oE 'https?://[^ "]+\.(tar\.(gz|bz2|xz)|tgz)' /tmp/bootstrap.log | sort -u \
-       > "$PREFIX/share/treelevel-mc/SOURCES.txt" \
+       > "$PREFIX/share/treelevel-tools/SOURCES.txt" \
     && rm -f herwig-bootstrap
 
 # Sherpa into the same prefix, against the HepMC3, LHAPDF and FastJet the bootstrap just installed.
@@ -76,7 +76,7 @@ RUN wget -q -O sherpa.tar.gz \
     && cmake --build build-sherpa -j "$(nproc)" \
     && cmake --install build-sherpa \
     && echo "https://gitlab.com/sherpa-team/sherpa/-/archive/v${SHERPA_VERSION}/sherpa-v${SHERPA_VERSION}.tar.gz" \
-       >> "$PREFIX/share/treelevel-mc/SOURCES.txt" \
+       >> "$PREFIX/share/treelevel-tools/SOURCES.txt" \
     && rm -rf build-sherpa "sherpa-v${SHERPA_VERSION}"
 
 # Pythia 8 and the driver that reads a Les Houches file and writes HepMC3 — the same driver Windows builds
@@ -95,7 +95,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends rsync \
     && make -j "$(nproc)" && make install \
     && cd .. && rm -rf "releases-pythia${PYTHIA_VERSION}" \
     && echo "https://gitlab.com/Pythia8/releases/-/archive/pythia${PYTHIA_VERSION}/releases-pythia${PYTHIA_VERSION}.tar.gz" \
-       >> "$PREFIX/share/treelevel-mc/SOURCES.txt"
+       >> "$PREFIX/share/treelevel-tools/SOURCES.txt"
 
 COPY Backends/pythia/main.cpp /tmp/treelevel-pythia.cpp
 RUN g++ -O2 -std=c++17 /tmp/treelevel-pythia.cpp -o "$PREFIX/bin/treelevel-pythia" \
@@ -130,7 +130,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends ocaml libtirpc-
     && make -j "$(nproc)" && make install \
     && cd .. && rm -rf "whizard-${WHIZARD_VERSION}" \
     && echo "https://whizard.hepforge.org/downloads/?f=whizard-${WHIZARD_VERSION}.tar.gz" \
-       >> "$PREFIX/share/treelevel-mc/SOURCES.txt"
+       >> "$PREFIX/share/treelevel-tools/SOURCES.txt"
 
 # WHIZARD installs one matrix-element compiler per model it knows — MSSM, NMSSM, UED, little Higgs, extra
 # dimensions — sixty-one of them, 704 MB, a quarter of the image. The engine writes `model = SM` and nothing
@@ -150,7 +150,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends libx11-dev \
     && mv "calchep_${CALCHEP_VERSION}" "$PREFIX/calchep" \
     && cd "$PREFIX/calchep" && make \
     && echo "https://theory.sinp.msu.ru/~pukhov/CALCHEP/calchep_${CALCHEP_VERSION}.tgz" \
-       >> "$PREFIX/share/treelevel-mc/SOURCES.txt"
+       >> "$PREFIX/share/treelevel-tools/SOURCES.txt"
 
 # The bootstrap leaves its unpacked trees behind, objects and all — ThePEG alone is 1.1 GB — and the COPY
 # below would carry every one of them into the finished image, which is half its weight for nothing.
@@ -161,7 +161,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends libx11-dev \
 RUN rm -rf "$PREFIX/src" \
     # Lisible et exécutable par quiconque : le conteneur se lance sous l'identité de l'appelant, pour que ce
     # qu'il écrit lui appartienne, et il ne doit alors rien trouver de fermé. L'archive de CalcHEP porte des
-    # permissions réservées au propriétaire — « /opt/treelevel-mc/calchep/bin/run_batch: Permission denied »,
+    # permissions réservées au propriétaire — « /opt/treelevel-tools/calchep/bin/run_batch: Permission denied »,
     # car son dossier de travail rappelle l'arbre d'installation. Le X majuscule n'ajoute le droit d'exécution
     # que là où il existe déjà, donc aux programmes et aux dossiers, jamais aux données.
     && chmod -R a+rX "$PREFIX"
@@ -170,14 +170,14 @@ RUN rm -rf "$PREFIX/src" \
 FROM mcr.microsoft.com/dotnet/sdk:8.0 AS engine
 ARG TARGETARCH
 WORKDIR /src
-COPY win/treelevel-mc/ ./
+COPY win/treelevel-tools/ ./
 RUN RID=$([ "$TARGETARCH" = "arm64" ] && echo linux-arm64 || echo linux-x64) \
     && dotnet publish -c Release -r "$RID" --self-contained true \
          -p:PublishSingleFile=true -o /out
 
 # --- what ships --------------------------------------------------------------------------------------------
 FROM debian:bookworm-slim
-ENV PREFIX=/opt/treelevel-mc
+ENV PREFIX=/opt/treelevel-tools
 ENV DEBIAN_FRONTEND=noninteractive
 
 # What the generators need while they run. Two of them are not content with libraries: WHIZARD writes Fortran
@@ -189,8 +189,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
       gcc gfortran make libc6-dev libx11-dev perl-modules-5.36 \
     && rm -rf /var/lib/apt/lists/*
 
-COPY --from=hep    /opt/treelevel-mc /opt/treelevel-mc
-COPY --from=engine /out/treelevel-mc /usr/local/bin/treelevel-mc
+COPY --from=hep    /opt/treelevel-tools /opt/treelevel-tools
+COPY --from=engine /out/treelevel-tools /usr/local/bin/treelevel-tools
 
 ENV PATH=$PREFIX/bin:$PATH \
     LD_LIBRARY_PATH=$PREFIX/lib:$PREFIX/lib/ThePEG \
@@ -203,11 +203,11 @@ ENV PATH=$PREFIX/bin:$PATH \
 # user's PATH lives in ~/.bashrc. But /etc/profile rewrites PATH from scratch, and ENV does not survive that:
 # $PREFIX/bin vanished, and `capabilities` saw nothing but passthrough while `Herwig --version` answered
 # perfectly. The environment therefore also lives where a login shell will read it.
-COPY docker/profile.sh /etc/profile.d/treelevel-mc.sh
+COPY docker/profile.sh /etc/profile.d/treelevel-tools.sh
 
 # The job folder is bind-mounted here; the engine writes its answers back into it.
 WORKDIR /job
-ENTRYPOINT ["/usr/local/bin/treelevel-mc"]
+ENTRYPOINT ["/usr/local/bin/treelevel-tools"]
 CMD ["capabilities"]
 
 LABEL org.opencontainers.image.title="TreeLevel Tools" \
