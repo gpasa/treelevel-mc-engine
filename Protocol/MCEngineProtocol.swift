@@ -91,6 +91,19 @@ public struct MCJob: Codable, Equatable {
             case .sherpa3, .whizard3, .calchep3: return false
             }
         }
+
+        /// Whether this generator can be put in front of a machine rather than in front of a process.
+        ///
+        /// Le mode collisionneur ne demande pas un processus exclusif : il fixe les faisceaux et laisse la
+        /// machine produire ce qu'elle produit. Un générateur qui ne le sait pas reçoit quand même un
+        /// `hardProcess`, dont `finalState` est alors la *signature à chercher* et non ce qu'il faut faire —
+        /// il calcule donc le processus exclusif et rend une section efficace qui a l'air d'une mesure.
+        /// Faux et convaincant : d'où un refus plutôt qu'un silence.
+        ///
+        /// WHIZARD et CalcHEP ne rejoindront pas cette liste : ce sont des générateurs d'éléments de
+        /// matrice, on leur tend un processus à compiler. Herwig et Sherpa le peuvent en principe, et c'est
+        /// le chantier de la 1.3.
+        public var drivesACollider: Bool { self == .pythia8 }
     }
 
     public var protocolVersion = MCEngineProtocol.version

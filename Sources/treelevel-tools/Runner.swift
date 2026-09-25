@@ -28,6 +28,17 @@ struct Runner {
            !FileManager.default.fileExists(atPath: folder.inputURL(job).path) {
             return finish(failed: "the job has no input file (\(job.input))", start: start)
         }
+        // Un travail collisionneur confié à un générateur qui ne mène pas de machine n'échouerait pas : il
+        // calculerait le processus exclusif que nomme `finalState`, qui dans ce mode est la signature à
+        // chercher. Il rendrait donc une section efficace qui a l'air d'une mesure. On refuse par le nom.
+        if job.hardProcess?.colliderMode == .collider, !job.generator.drivesACollider {
+            let raison = job.generator.readsLesHouches
+                ? "\(job.generator.label) ne mène pas encore de machine : le mode collisionneur passe par "
+                  + "Pythia 8. Décochez-le, ou choisissez Pythia."
+                : "\(job.generator.label) calcule le processus qu'on lui donne ; il ne peut pas être placé "
+                  + "devant une machine. Le mode collisionneur passe par Pythia 8."
+            return finish(failed: raison, start: start)
+        }
         do {
             switch job.generator {
             case .passthrough: return try passthrough(start: start)
