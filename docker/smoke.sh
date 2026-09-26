@@ -74,7 +74,12 @@ essai passthrough test-job        3.1139 3.1140
 essai pythia8     test-job        3.1139 3.1140
 essai herwig7     test-job        3.1139 3.1140
 # Les trois qui calculent leur propre élément de matrice rendent la leur.
-essai sherpa3     test-job-sherpa 10     30
+# Sherpa a longtemps eu une bande à lui, dix fois plus haute que celle de ses deux pairs, et cette bande
+# décrivait un défaut : il allumait d'office la densité QED sur les faisceaux de leptons, et rendait le
+# retour radiatif vers le Z au lieu du processus à √s. Le test entérinait donc le faux. Depuis que la carte
+# écrit « PDF_LIBRARY: None », les trois calculent la même chose et doivent tenir dans la même bande — c'est
+# précisément ce que ce test doit vérifier. Si Sherpa en ressort par le haut, c'est la ligne qui manque.
+essai sherpa3     test-job-sherpa 2.5    3.6
 essai whizard3    test-job-sherpa 2.5    3.6
 essai calchep3    test-job-sherpa 2.5    3.6
 
