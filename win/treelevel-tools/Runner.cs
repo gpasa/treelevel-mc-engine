@@ -514,6 +514,13 @@ public sealed class Runner
         card.Append($"MI_HANDLER: {(job.MultipleInteractions ? "Amisic" : "None")}\n");
         card.Append($"HARD_DECAYS: {{Enabled: {(job.Decays ? "true" : "false")}}}\n");
         card.Append($"EVENT_OUTPUT: HepMC3[{Path.GetFileNameWithoutExtension(job.Output)}]\n");
+        // Sherpa donne d'office une structure aux faisceaux de leptons — la densité « PDFE », c'est-à-dire le
+        // rayonnement initial de QED. La section efficace qu'il annonce n'est alors plus celle du processus à
+        // √s : elle est dominée par le retour radiatif vers le Z, et sort six fois trop haut (21 pb au lieu de
+        // 3,2 pour e⁻e⁺ → b b̄ à 200 GeV). Les autres générateurs calculent à énergie fixe ; on aligne Sherpa,
+        // et qui veut le rayonnement le redemande dans les réglages libres. Les faisceaux hadroniques, eux, ne
+        // sont rien sans leurs densités.
+        if (!p.Beams.All(b => Math.Abs(b) > 100)) card.Append("PDF_LIBRARY: None\n");
         if (p.MinimumPT is double pt) card.Append($"SELECTORS:\n- [PT, {p.FinalState[0]}, {N(pt)}, E_CMS]\n");
         if (!string.IsNullOrEmpty(job.ExtraSettings)) card.Append(job.ExtraSettings + "\n");
         File.WriteAllText(Path.Combine(folder.Path, "Sherpa.yaml"), card.ToString().Replace("\r\n", "\n"), MCEngineProtocol.Utf8);
